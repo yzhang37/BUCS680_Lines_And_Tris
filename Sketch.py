@@ -269,9 +269,9 @@ class Sketch(CanvasBase):
         # TODO: Color transition for each point in the middle is not yet supported
         # TODO: Anti-aliasing is not yet supported
 
-        # If p2 is to the left of p1, swap two points
-        if p2.coords[0] < p1.coords[0]:
-            p1, p2 = p2, p1
+        # # If p2 is to the left of p1, swap two points
+        # if p2.coords[0] < p1.coords[0]:
+        #     p1, p2 = p2, p1
 
         # Although the 1st point has already been drawn, this function should
         # ignore the outside and keep redrawing it.
@@ -282,20 +282,38 @@ class Sketch(CanvasBase):
         delta_y = p2.coords[1] - p1.coords[1]
         delta_x = p2.coords[0] - p1.coords[0]
 
-        (cur_x, cur_y) = p1.coords
-        last_error = 2 * delta_y - delta_x
+        x_step_mode = False
+        x_trans = y_trans = 1
+        if abs(delta_y) <= abs(delta_x):
+            x_step_mode = True
+        if delta_x < 0:
+            x_trans = -1
+            delta_x *= x_trans
+        if delta_y < 0:
+            y_trans = -1
+            delta_y *= y_trans
 
-        while cur_x < p2.coords[0]:
-            if last_error > 0:
-                y_step = 1
-            else:
-                y_step = 0
-            cur_y += y_step
-            self.drawPoint(buff, Point((cur_x, cur_y), p1.color))
+        cur_x = p1.coords[0] * x_trans
+        cur_y = p1.coords[1] * y_trans
+        final_x = p2.coords[0] * x_trans
+        final_y = p2.coords[1] * y_trans
 
-            # x axis step
-            cur_x += 1
-            last_error = last_error + 2 * delta_y - 2 * delta_x * y_step
+        if x_step_mode:
+            last_error = 2 * delta_y - delta_x
+            while cur_x < final_x:
+                y_step = 1 if last_error > 0 else 0
+                cur_y += y_step
+                self.drawPoint(buff, Point((cur_x * x_trans, cur_y * y_trans), p1.color))
+                cur_x += 1  # x axis step
+                last_error = last_error + 2 * delta_y - 2 * delta_x * y_step
+        else:
+            last_error = 2 * delta_x - delta_y
+            while cur_y < final_y:
+                x_step = 1 if last_error > 0 else 0
+                cur_x += x_step
+                self.drawPoint(buff, Point((cur_x * x_trans, cur_y * y_trans), p1.color))
+                cur_y += 1  # y axis step
+                last_error = last_error + 2 * delta_x - 2 * delta_y * x_step
 
         # Draw the last point
         self.drawPoint(buff, p2)
