@@ -9,6 +9,7 @@ First version Created on 09/28/2018
 """
 
 import os
+import typing
 
 import wx
 import math
@@ -118,7 +119,7 @@ class Sketch(CanvasBase):
         else:
             raise ImportError("Cannot import texture file")
 
-    def __addPoint2Pointlist(self, pointlist, x, y):
+    def __addPoint2Pointlist(self, pointlist: typing.List[Point], x: int, y: int):
         if self.randomColor:
             p = Point((x, y), ColorType(random.random(), random.random(), random.random()))
         else:
@@ -126,7 +127,7 @@ class Sketch(CanvasBase):
         pointlist.append(p)
 
     # Deal with Mouse Left Button Pressed Interruption
-    def Interrupt_MouseL(self, x, y):
+    def Interrupt_MouseL(self, x: int, y: int):
         self.__addPoint2Pointlist(self.points_l, x, y)
         # Draw a point when one point provided or a line when two ends provided
         if len(self.points_l) % 2 == 1:
@@ -137,10 +138,13 @@ class Sketch(CanvasBase):
             if self.debug > 0:
                 print("draw a line from ", self.points_l[-1], " -> ", self.points_l[-2])
             self.drawPoint(self.buff, self.points_l[-1])
+
+            self.drawLine(self.buff, self.points_l[-1], self.points_l[-2],
+                          self.doSmooth, self.doAA)
             self.points_l.clear()
 
     # Deal with Mouse Right Button Pressed Interruption
-    def Interrupt_MouseR(self, x, y):
+    def Interrupt_MouseR(self, x: int, y: int):
         self.__addPoint2Pointlist(self.points_r, x, y)
         if len(self.points_r) % 3 == 1:
             if self.debug > 0:
@@ -156,7 +160,7 @@ class Sketch(CanvasBase):
             self.drawPoint(self.buff, self.points_r[-1])
             self.points_r.clear()
 
-    def Interrupt_Keyboard(self, keycode):
+    def Interrupt_Keyboard(self, keycode: int):
         """
         keycode Reference: https://docs.wxpython.org/wx.KeyCode.enumeration.html#wx-keycode
 
@@ -226,7 +230,7 @@ class Sketch(CanvasBase):
         return texture.getPointFromPointArray(x, y)
 
     @staticmethod
-    def drawPoint(buff, point):
+    def drawPoint(buff: Buff, point: Point):
         """
         Draw a point on buff
 
@@ -243,7 +247,7 @@ class Sketch(CanvasBase):
         buff.buff[x, y, 1] = c.g * 255
         buff.buff[x, y, 2] = c.b * 255
 
-    def drawLine(self, buff, p1, p2, doSmooth=True, doAA=False, doAAlevel=4):
+    def drawLine(self, buff: Buff, p1: Point, p2: Point, doSmooth=True, doAA=False, doAAlevel=4):
         """
         Draw a line between p1 and p2 on buff
 
@@ -261,13 +265,45 @@ class Sketch(CanvasBase):
         :type doAAlevel: int
         :rtype: None
         """
-        ##### TODO 1: Use Bresenham algorithm to draw a line between p1 and p2 on buff.
-        # Requirements:
-        #   1. Only integer is allowed in interpolate point coordinates between p1 and p2
-        #   2. Float number is allowed in interpolate point color
+
+        # TODO: Color transition for each point in the middle is not yet supported
+        # TODO: Anti-aliasing is not yet supported
+
+        # If p2 is to the left of p1, swap two points
+        if p2.coords[0] < p1.coords[0]:
+            p1, p2 = p2, p1
+
+        # Although the 1st point has already been drawn, this function should
+        # ignore the outside and keep redrawing it.
+
+        # TODO: In the first quadrant, cases with slope greater than 1 are not treated.
+
+        self.drawPoint(buff, p1)
+        delta_y = p2.coords[1] - p1.coords[1]
+        delta_x = p2.coords[0] - p1.coords[0]
+
+        (cur_x, cur_y) = p1.coords
+        last_error = 2 * delta_y - delta_x
+
+        while cur_x < p2.coords[0]:
+            if last_error > 0:
+                y_step = 1
+            else:
+                y_step = 0
+            cur_y += y_step
+            self.drawPoint(buff, Point((cur_x, cur_y), p1.color))
+
+            # x axis step
+            cur_x += 1
+            last_error = last_error + 2 * delta_y - 2 * delta_x * y_step
+
+        # Draw the last point
+        self.drawPoint(buff, p2)
+
         return
 
-    def drawTriangle(self, buff, p1, p2, p3, doSmooth=True, doAA=False, doAAlevel=4, doTexture=False):
+    def drawTriangle(self, buff: Buff, p1: Point, p2: Point, p3: Point,
+                     doSmooth=True,doAA=False, doAAlevel=4, doTexture=False):
         """
         draw Triangle to buff. apply smooth color filling if doSmooth set to true, otherwise fill with first point color
         if doAA is true, apply anti-aliasing to triangle based on doAAlevel given.
@@ -300,7 +336,7 @@ class Sketch(CanvasBase):
         return
 
     # test for lines lines in all directions
-    def testCaseLine01(self, n_steps):
+    def testCaseLine01(self, n_steps: int):
         center_x = int(self.buff.width / 2)
         center_y = int(self.buff.height / 2)
         radius = int(min(self.buff.width, self.buff.height) * 0.45)
@@ -316,7 +352,7 @@ class Sketch(CanvasBase):
             self.drawLine(self.buff, v0, v1, doSmooth=True)
 
     # test for lines: drawing circle and petal 
-    def testCaseLine02(self, n_steps):
+    def testCaseLine02(self, n_steps: int):
         n_steps = 2 * n_steps
         d_theta = 2 * math.pi / n_steps
         d_petal = 12 * math.pi / n_steps
@@ -349,7 +385,7 @@ class Sketch(CanvasBase):
             self.drawLine(self.buff, v0, v1, doSmooth=True, doAA=self.doAA, doAAlevel=self.doAAlevel)
 
     # test for smooth filling triangle
-    def testCaseTri01(self, n_steps):
+    def testCaseTri01(self, n_steps: int):
         n_steps = int(n_steps / 2)
         delta = 2 * math.pi / n_steps
         radius = int(min(self.buff.width, self.buff.height) * 0.45)
@@ -370,7 +406,7 @@ class Sketch(CanvasBase):
                                  (127. + 127. * math.sin(theta + delta + 4 * math.pi / 3)) / 255))
             self.drawTriangle(self.buff, v1, v0, v2, False, self.doAA, self.doAAlevel)
 
-    def testCaseTri02(self, n_steps):
+    def testCaseTri02(self, n_steps: int):
         # Test case for no smooth color filling triangle
         n_steps = int(n_steps / 2)
         delta = 2 * math.pi / n_steps
@@ -392,7 +428,7 @@ class Sketch(CanvasBase):
                                  (127. + 127. * math.sin(theta + delta + 4 * math.pi / 3)) / 255))
             self.drawTriangle(self.buff, v0, v1, v2, True, self.doAA, self.doAAlevel)
 
-    def testCaseTriTexture01(self, n_steps):
+    def testCaseTriTexture01(self, n_steps: int):
         # Test case for no smooth color filling triangle
         n_steps = int(n_steps / 2)
         delta = 2 * math.pi / n_steps
