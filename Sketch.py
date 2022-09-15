@@ -140,7 +140,7 @@ class Sketch(CanvasBase):
             self.drawPoint(self.buff, self.points_l[-1])
 
             self.drawLine(self.buff, self.points_l[-1], self.points_l[-2],
-                          self.doSmooth, self.doAA)
+                          self.doSmooth, self.doAA, self.doAAlevel)
             self.points_l.clear()
 
     # Deal with Mouse Right Button Pressed Interruption
@@ -266,18 +266,10 @@ class Sketch(CanvasBase):
         :rtype: None
         """
 
-        # TODO: Color transition for each point in the middle is not yet supported
         # TODO: Anti-aliasing is not yet supported
-
-        # # If p2 is to the left of p1, swap two points
-        # if p2.coords[0] < p1.coords[0]:
-        #     p1, p2 = p2, p1
 
         # Although the 1st point has already been drawn, this function should
         # ignore the outside and keep redrawing it.
-
-        # TODO: In the first quadrant, cases with slope greater than 1 are not treated.
-
         self.drawPoint(buff, p1)
         delta_y = p2.coords[1] - p1.coords[1]
         delta_x = p2.coords[0] - p1.coords[0]
@@ -293,8 +285,8 @@ class Sketch(CanvasBase):
             y_trans = -1
             delta_y *= y_trans
 
-        cur_x = p1.coords[0] * x_trans
-        cur_y = p1.coords[1] * y_trans
+        init_x = cur_x = p1.coords[0] * x_trans
+        init_y = cur_y = p1.coords[1] * y_trans
         final_x = p2.coords[0] * x_trans
         final_y = p2.coords[1] * y_trans
 
@@ -303,7 +295,16 @@ class Sketch(CanvasBase):
             while cur_x < final_x:
                 y_step = 1 if last_error > 0 else 0
                 cur_y += y_step
-                self.drawPoint(buff, Point((cur_x * x_trans, cur_y * y_trans), p1.color))
+
+                if doSmooth:
+                    t = (cur_x - init_x) / delta_x
+                    cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
+                                          p1.color.g * (1-t) + p2.color.g * t,
+                                          p1.color.b * (1-t) + p2.color.b * t)
+                else:
+                    cur_color = p1.color
+
+                self.drawPoint(buff, Point((cur_x * x_trans, cur_y * y_trans), cur_color))
                 cur_x += 1  # x axis step
                 last_error = last_error + 2 * delta_y - 2 * delta_x * y_step
         else:
@@ -311,7 +312,16 @@ class Sketch(CanvasBase):
             while cur_y < final_y:
                 x_step = 1 if last_error > 0 else 0
                 cur_x += x_step
-                self.drawPoint(buff, Point((cur_x * x_trans, cur_y * y_trans), p1.color))
+
+                if doSmooth:
+                    t = (cur_y - init_y) / delta_y
+                    cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
+                                          p1.color.g * (1-t) + p2.color.g * t,
+                                          p1.color.b * (1-t) + p2.color.b * t)
+                else:
+                    cur_color = p1.color
+
+                self.drawPoint(buff, Point((cur_x * x_trans, cur_y * y_trans), cur_color))
                 cur_y += 1  # y axis step
                 last_error = last_error + 2 * delta_x - 2 * delta_y * x_step
 
