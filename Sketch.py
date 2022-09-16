@@ -247,6 +247,11 @@ class Sketch(CanvasBase):
         buff.buff[x, y, 1] = c.g * 255
         buff.buff[x, y, 2] = c.b * 255
 
+    @staticmethod
+    def __check_AAlevel(AAlevel: int):
+        if type(AAlevel) != int or AAlevel <= 0:
+            raise ValueError("AAlevel must be an integer >= 1.")
+
     def drawLine(self, buff: Buff, p1: Point, p2: Point, doSmooth=True, doAA=False, doAAlevel=4):
         """
         Draw a line between p1 and p2 on buff
@@ -267,67 +272,64 @@ class Sketch(CanvasBase):
         """
 
         # TODO: Anti-aliasing is not yet supported
+        if doAA:
+            self.__check_AAlevel(doAAlevel)
 
         # Although the 1st point has already been drawn, this function should
         # ignore the outside and keep redrawing it.
         self.drawPoint(buff, p1)
-        delta_y = p2.coords[1] - p1.coords[1]
-        delta_x = p2.coords[0] - p1.coords[0]
+
+        class AxisCalcData:
+            def __init__(self, delta: int, init: int, final: int):
+                # Represents the delta of the axis
+                self.trans = 1 if delta >= 0 else -1
+                self.delta = abs(delta)
+                self.init = init * self.trans
+                self.final = final * self.trans
+
+        x_data = AxisCalcData(delta=p2.coords[0] - p1.coords[0],
+                              init=p1.coords[0],
+                              final=p2.coords[0])
+
+        y_data = AxisCalcData(delta=p2.coords[1] - p1.coords[1],
+                              init=p1.coords[1],
+                              final=p2.coords[1])
 
         x_step_mode = False
-        x_trans = y_trans = 1
-        if abs(delta_y) <= abs(delta_x):
+        if abs(y_data.delta) <= abs(x_data.delta):
             x_step_mode = True
-        if delta_x < 0:
-            x_trans = -1
-            delta_x *= x_trans
-        if delta_y < 0:
-            y_trans = -1
-            delta_y *= y_trans
-
-        init_x = cur_x = p1.coords[0] * x_trans
-        init_y = cur_y = p1.coords[1] * y_trans
-        final_x = p2.coords[0] * x_trans
-        final_y = p2.coords[1] * y_trans
-
-        if x_step_mode:
-            last_error = 2 * delta_y - delta_x
-            while cur_x < final_x:
-                y_step = 1 if last_error > 0 else 0
-                cur_y += y_step
-
-                if doSmooth:
-                    t = (cur_x - init_x) / delta_x
-                    cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
-                                          p1.color.g * (1-t) + p2.color.g * t,
-                                          p1.color.b * (1-t) + p2.color.b * t)
-                else:
-                    cur_color = p1.color
-
-                self.drawPoint(buff, Point((cur_x * x_trans, cur_y * y_trans), cur_color))
-                cur_x += 1  # x axis step
-                last_error = last_error + 2 * delta_y - 2 * delta_x * y_step
         else:
-            last_error = 2 * delta_x - delta_y
-            while cur_y < final_y:
-                x_step = 1 if last_error > 0 else 0
-                cur_x += x_step
+            # If not x_step_mode, then swap all x and y variables
+            y_data, x_data = x_data, y_data
 
-                if doSmooth:
-                    t = (cur_y - init_y) / delta_y
-                    cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
-                                          p1.color.g * (1-t) + p2.color.g * t,
-                                          p1.color.b * (1-t) + p2.color.b * t)
-                else:
-                    cur_color = p1.color
+        # begin code of drawing
+        last_error = 2 * y_data.delta - x_data.delta
+        cur_x = x_data.init
+        cur_y = y_data.init
+        while cur_x < x_data.final:
+            y_step = 1 if last_error > 0 else 0
+            cur_y += y_step
 
-                self.drawPoint(buff, Point((cur_x * x_trans, cur_y * y_trans), cur_color))
-                cur_y += 1  # y axis step
-                last_error = last_error + 2 * delta_x - 2 * delta_y * x_step
+            if doSmooth:
+                t = (cur_x - x_data.init) / x_data.delta
+                cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
+                                      p1.color.g * (1-t) + p2.color.g * t,
+                                      p1.color.b * (1-t) + p2.color.b * t)
+            else:
+                cur_color = p1.color
 
-        # Draw the last point
+            if x_step_mode:
+                draw_point = Point((cur_x * x_data.trans, cur_y * y_data.trans), cur_color)
+            else:
+                draw_point = Point((cur_y * y_data.trans, cur_x * x_data.trans), cur_color)
+
+            self.drawPoint(buff, draw_point)
+            cur_x += 1
+            last_error = last_error + 2 * y_data.delta - 2 * x_data.delta * y_step
+
+        # end code of drawing
+
         self.drawPoint(buff, p2)
-
         return
 
     def drawTriangle(self, buff: Buff, p1: Point, p2: Point, p3: Point,
