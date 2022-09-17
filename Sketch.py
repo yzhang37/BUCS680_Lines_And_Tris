@@ -138,7 +138,8 @@ class Sketch(CanvasBase):
             if self.debug > 0:
                 print("draw a line from ", self.points_l[-1], " -> ", self.points_l[-2])
             self.drawPoint(self.buff, self.points_l[-1])
-
+            # TODO: remove
+            self.buff.clear()
             self.drawLine(self.buff, self.points_l[-1], self.points_l[-2],
                           self.doSmooth, self.doAA, self.doAAlevel)
             self.points_l.clear()
@@ -275,25 +276,16 @@ class Sketch(CanvasBase):
         if doAA:
             self.__check_AAlevel(doAAlevel)
 
-        # Although the 1st point has already been drawn, this function should
-        # ignore the outside and keep redrawing it.
-        self.drawPoint(buff, p1)
-
         class AxisCalcData:
-            def __init__(self, delta: int, init: int, final: int):
-                # Represents the delta of the axis
-                self.trans = 1 if delta >= 0 else -1
+            def __init__(self, init: int, final: int):
+                delta = final - init
                 self.delta = abs(delta)
+                self.trans = 1 if delta >= 0 else -1
                 self.init = init * self.trans
                 self.final = final * self.trans
 
-        x_data = AxisCalcData(delta=p2.coords[0] - p1.coords[0],
-                              init=p1.coords[0],
-                              final=p2.coords[0])
-
-        y_data = AxisCalcData(delta=p2.coords[1] - p1.coords[1],
-                              init=p1.coords[1],
-                              final=p2.coords[1])
+        x_data = AxisCalcData(init=p1.coords[0], final=p2.coords[0])
+        y_data = AxisCalcData(init=p1.coords[1], final=p2.coords[1])
 
         x_step_mode = False
         if abs(y_data.delta) <= abs(x_data.delta):
@@ -304,14 +296,11 @@ class Sketch(CanvasBase):
 
         # begin code of drawing
         last_error = 2 * y_data.delta - x_data.delta
-        cur_x = x_data.init
-        cur_y = y_data.init
-        while cur_x < x_data.final:
-            y_step = 1 if last_error > 0 else 0
-            cur_y += y_step
-
+        cur_x = cur_y = 0
+        while True:
+            # 先开始画点
             if doSmooth:
-                t = (cur_x - x_data.init) / x_data.delta
+                t = cur_x / x_data.delta
                 cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
                                       p1.color.g * (1-t) + p2.color.g * t,
                                       p1.color.b * (1-t) + p2.color.b * t)
@@ -319,21 +308,29 @@ class Sketch(CanvasBase):
                 cur_color = p1.color
 
             if x_step_mode:
-                draw_point = Point((cur_x * x_data.trans, cur_y * y_data.trans), cur_color)
+                draw_point = Point(
+                    coords=((cur_x + x_data.init) * x_data.trans, (cur_y + y_data.init) * y_data.trans),
+                    color=cur_color)
             else:
-                draw_point = Point((cur_y * y_data.trans, cur_x * x_data.trans), cur_color)
+                draw_point = Point(
+                    coords=((cur_y + y_data.init) * y_data.trans, (cur_x + x_data.init) * x_data.trans),
+                    color=cur_color)
 
             self.drawPoint(buff, draw_point)
+            # 结束画点
             cur_x += 1
+            if cur_x >= x_data.delta + 1:
+                break
+
+            y_step = 1 if last_error > 0 else 0
+            cur_y += y_step
             last_error = last_error + 2 * y_data.delta - 2 * x_data.delta * y_step
 
         # end code of drawing
-
-        self.drawPoint(buff, p2)
         return
 
     def drawTriangle(self, buff: Buff, p1: Point, p2: Point, p3: Point,
-                     doSmooth=True,doAA=False, doAAlevel=4, doTexture=False):
+                     doSmooth=True, doAA=False, doAAlevel=4, doTexture=False):
         """
         draw Triangle to buff. apply smooth color filling if doSmooth set to true, otherwise fill with first point color
         if doAA is true, apply anti-aliasing to triangle based on doAAlevel given.
