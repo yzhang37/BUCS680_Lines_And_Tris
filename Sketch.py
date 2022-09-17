@@ -138,8 +138,6 @@ class Sketch(CanvasBase):
             if self.debug > 0:
                 print("draw a line from ", self.points_l[-1], " -> ", self.points_l[-2])
             self.drawPoint(self.buff, self.points_l[-1])
-            # TODO: remove
-            self.buff.clear()
             self.drawLine(self.buff, self.points_l[-1], self.points_l[-2],
                           self.doSmooth, self.doAA, self.doAAlevel)
             self.points_l.clear()
@@ -231,7 +229,7 @@ class Sketch(CanvasBase):
         return texture.getPointFromPointArray(x, y)
 
     @staticmethod
-    def drawPoint(buff: Buff, point: Point):
+    def drawPoint(buff: Buff, point: Point, alpha=1.0):
         """
         Draw a point on buff
 
@@ -239,14 +237,31 @@ class Sketch(CanvasBase):
         :type buff: Buff
         :param point: A point to draw on buff
         :type point: Point
+        :param alpha: Control the opaqueness of the color
+        :type alpha: float from 0.0 to 1.0
         :rtype: None
         """
         x, y = point.coords
-        c = point.color
+        color = point.color
+        r = color.r
+        g = color.g
+        b = color.b
+
+        if alpha <= 0.0:
+            return
+        elif alpha < 1.0:
+            orig_c = buff.getPoint(x, y).color
+            r = orig_c.r * (1.0 - alpha) + r * alpha
+            g = orig_c.g * (1.0 - alpha) + g * alpha
+            b = orig_c.b * (1.0 - alpha) + b * alpha
+
         # because we have already specified buff.buff has data type uint8, type conversion will be done in numpy
-        buff.buff[x, y, 0] = c.r * 255
-        buff.buff[x, y, 1] = c.g * 255
-        buff.buff[x, y, 2] = c.b * 255
+        buff.buff[x, y, 0] = r * 255
+        buff.buff[x, y, 1] = g * 255
+        buff.buff[x, y, 2] = b * 255
+
+    def a(self):
+        self.buff.getPoint()
 
     @staticmethod
     def __check_AAlevel(AAlevel: int):
@@ -272,9 +287,10 @@ class Sketch(CanvasBase):
         :rtype: None
         """
 
-        # TODO: Anti-aliasing is not yet supported
         if doAA:
             self.__check_AAlevel(doAAlevel)
+        # 如果支持超样本抗锯齿，那么 x 和 y 的范围都会变大
+        super_scale = 1 if not doAA else doAAlevel
 
         class AxisCalcData:
             def __init__(self, init: int, final: int):
@@ -297,29 +313,65 @@ class Sketch(CanvasBase):
         # begin code of drawing
         last_error = 2 * y_data.delta - x_data.delta
         cur_x = cur_y = 0
+        cur_downscale_y = 0
+        subpixel_y_elevated = False
+        y_cache = [0, 0]
         while True:
-            # 先开始画点
-            if doSmooth:
-                t = cur_x / x_data.delta
-                cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
-                                      p1.color.g * (1-t) + p2.color.g * t,
-                                      p1.color.b * (1-t) + p2.color.b * t)
+            new_downscale_y = cur_y // super_scale
+            if new_downscale_y > cur_downscale_y:
+                subpixel_y_elevated = True
+            if subpixel_y_elevated:
+                y_cache[1] += 1
             else:
-                cur_color = p1.color
+                y_cache[0] += 1
 
-            if x_step_mode:
-                draw_point = Point(
-                    coords=((cur_x + x_data.init) * x_data.trans, (cur_y + y_data.init) * y_data.trans),
-                    color=cur_color)
-            else:
-                draw_point = Point(
-                    coords=((cur_y + y_data.init) * y_data.trans, (cur_x + x_data.init) * x_data.trans),
-                    color=cur_color)
+            # Only draw once if cur_x % super_scale = super_scale - 1
+            if cur_x % super_scale == super_scale - 1:
+                # Calculate how much opacity to draw for y_k and y_{k+1}, respectively
+                alpha_k = y_cache[0] / super_scale
+                alpha_k_1 = y_cache[1] / super_scale
 
-            self.drawPoint(buff, draw_point)
-            # 结束画点
+                cur_downscale_x = cur_x // super_scale
+
+                if doSmooth:
+                    t = cur_downscale_x / x_data.delta
+                    cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
+                                          p1.color.g * (1-t) + p2.color.g * t,
+                                          p1.color.b * (1-t) + p2.color.b * t)
+                else:
+                    cur_color = p1.color
+
+                # Now both points need to be drawn, and
+                # only the lightness of the two points is different
+                if x_step_mode:
+                    self.drawPoint(
+                        buff,
+                        Point(((cur_downscale_x + x_data.init) * x_data.trans,
+                              (cur_downscale_y + y_data.init) * y_data.trans), cur_color),
+                        alpha_k)
+                    self.drawPoint(
+                        buff,
+                        Point(((cur_downscale_x + x_data.init) * x_data.trans,
+                               (cur_downscale_y + y_data.init + 1) * y_data.trans), cur_color),
+                        alpha_k_1)
+                else:
+                    self.drawPoint(
+                        buff,
+                        Point(((cur_downscale_y + y_data.init) * y_data.trans,
+                               (cur_downscale_x + x_data.init) * x_data.trans), cur_color),
+                        alpha_k)
+                    self.drawPoint(
+                        buff,
+                        Point(((cur_downscale_y + y_data.init + 1) * y_data.trans,
+                               (cur_downscale_x + x_data.init) * x_data.trans), cur_color),
+                        alpha_k_1)
+                # Clean up the y_cache after this drawing epoch is ended.
+                y_cache = [0, 0]
+                subpixel_y_elevated = False
+                cur_downscale_y = cur_y // super_scale
+
             cur_x += 1
-            if cur_x >= x_data.delta + 1:
+            if cur_x >= (x_data.delta + 1) * super_scale:
                 break
 
             y_step = 1 if last_error > 0 else 0
