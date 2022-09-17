@@ -138,7 +138,6 @@ class Sketch(CanvasBase):
             if self.debug > 0:
                 print("draw a line from ", self.points_l[-1], " -> ", self.points_l[-2])
             self.drawPoint(self.buff, self.points_l[-1])
-
             self.drawLine(self.buff, self.points_l[-1], self.points_l[-2],
                           self.doSmooth, self.doAA, self.doAAlevel)
             self.points_l.clear()
@@ -230,7 +229,7 @@ class Sketch(CanvasBase):
         return texture.getPointFromPointArray(x, y)
 
     @staticmethod
-    def drawPoint(buff: Buff, point: Point):
+    def drawPoint(buff: Buff, point: Point, alpha=1.0):
         """
         Draw a point on buff
 
@@ -238,14 +237,31 @@ class Sketch(CanvasBase):
         :type buff: Buff
         :param point: A point to draw on buff
         :type point: Point
+        :param alpha: Control the opaqueness of the color
+        :type alpha: float from 0.0 to 1.0
         :rtype: None
         """
         x, y = point.coords
-        c = point.color
+        color = point.color
+        r = color.r
+        g = color.g
+        b = color.b
+
+        if alpha <= 0.0:
+            return
+        elif alpha < 1.0:
+            orig_c = buff.getPoint(x, y).color
+            r = orig_c.r * (1.0 - alpha) + r * alpha
+            g = orig_c.g * (1.0 - alpha) + g * alpha
+            b = orig_c.b * (1.0 - alpha) + b * alpha
+
         # because we have already specified buff.buff has data type uint8, type conversion will be done in numpy
-        buff.buff[x, y, 0] = c.r * 255
-        buff.buff[x, y, 1] = c.g * 255
-        buff.buff[x, y, 2] = c.b * 255
+        buff.buff[x, y, 0] = r * 255
+        buff.buff[x, y, 1] = g * 255
+        buff.buff[x, y, 2] = b * 255
+
+    def a(self):
+        self.buff.getPoint()
 
     @staticmethod
     def __check_AAlevel(AAlevel: int):
@@ -271,29 +287,21 @@ class Sketch(CanvasBase):
         :rtype: None
         """
 
-        # TODO: Anti-aliasing is not yet supported
         if doAA:
             self.__check_AAlevel(doAAlevel)
-
-        # Although the 1st point has already been drawn, this function should
-        # ignore the outside and keep redrawing it.
-        self.drawPoint(buff, p1)
+        # 如果支持超样本抗锯齿，那么 x 和 y 的范围都会变大
+        super_scale = 1 if not doAA else doAAlevel
 
         class AxisCalcData:
-            def __init__(self, delta: int, init: int, final: int):
-                # Represents the delta of the axis
-                self.trans = 1 if delta >= 0 else -1
+            def __init__(self, init: int, final: int):
+                delta = final - init
                 self.delta = abs(delta)
+                self.trans = 1 if delta >= 0 else -1
                 self.init = init * self.trans
                 self.final = final * self.trans
 
-        x_data = AxisCalcData(delta=p2.coords[0] - p1.coords[0],
-                              init=p1.coords[0],
-                              final=p2.coords[0])
-
-        y_data = AxisCalcData(delta=p2.coords[1] - p1.coords[1],
-                              init=p1.coords[1],
-                              final=p2.coords[1])
+        x_data = AxisCalcData(init=p1.coords[0], final=p2.coords[0])
+        y_data = AxisCalcData(init=p1.coords[1], final=p2.coords[1])
 
         x_step_mode = False
         if abs(y_data.delta) <= abs(x_data.delta):
@@ -304,36 +312,77 @@ class Sketch(CanvasBase):
 
         # begin code of drawing
         last_error = 2 * y_data.delta - x_data.delta
-        cur_x = x_data.init
-        cur_y = y_data.init
-        while cur_x < x_data.final:
+        cur_x = cur_y = 0
+        cur_downscale_y = 0
+        subpixel_y_elevated = False
+        y_cache = [0, 0]
+        while True:
+            new_downscale_y = cur_y // super_scale
+            if new_downscale_y > cur_downscale_y:
+                subpixel_y_elevated = True
+            if subpixel_y_elevated:
+                y_cache[1] += 1
+            else:
+                y_cache[0] += 1
+
+            # Only draw once if cur_x % super_scale = super_scale - 1
+            if cur_x % super_scale == super_scale - 1:
+                # Calculate how much opacity to draw for y_k and y_{k+1}, respectively
+                alpha_k = y_cache[0] / super_scale
+                alpha_k_1 = y_cache[1] / super_scale
+
+                cur_downscale_x = cur_x // super_scale
+
+                if doSmooth:
+                    t = cur_downscale_x / x_data.delta
+                    cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
+                                          p1.color.g * (1-t) + p2.color.g * t,
+                                          p1.color.b * (1-t) + p2.color.b * t)
+                else:
+                    cur_color = p1.color
+
+                # Now both points need to be drawn, and
+                # only the lightness of the two points is different
+                if x_step_mode:
+                    self.drawPoint(
+                        buff,
+                        Point(((cur_downscale_x + x_data.init) * x_data.trans,
+                              (cur_downscale_y + y_data.init) * y_data.trans), cur_color),
+                        alpha_k)
+                    self.drawPoint(
+                        buff,
+                        Point(((cur_downscale_x + x_data.init) * x_data.trans,
+                               (cur_downscale_y + y_data.init + 1) * y_data.trans), cur_color),
+                        alpha_k_1)
+                else:
+                    self.drawPoint(
+                        buff,
+                        Point(((cur_downscale_y + y_data.init) * y_data.trans,
+                               (cur_downscale_x + x_data.init) * x_data.trans), cur_color),
+                        alpha_k)
+                    self.drawPoint(
+                        buff,
+                        Point(((cur_downscale_y + y_data.init + 1) * y_data.trans,
+                               (cur_downscale_x + x_data.init) * x_data.trans), cur_color),
+                        alpha_k_1)
+                # Clean up the y_cache after this drawing epoch is ended.
+                y_cache = [0, 0]
+                subpixel_y_elevated = False
+                cur_downscale_y = cur_y // super_scale
+
+            cur_x += 1
+            if cur_x >= (x_data.delta + 1) * super_scale:
+                break
+
             y_step = 1 if last_error > 0 else 0
             cur_y += y_step
-
-            if doSmooth:
-                t = (cur_x - x_data.init) / x_data.delta
-                cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
-                                      p1.color.g * (1-t) + p2.color.g * t,
-                                      p1.color.b * (1-t) + p2.color.b * t)
-            else:
-                cur_color = p1.color
-
-            if x_step_mode:
-                draw_point = Point((cur_x * x_data.trans, cur_y * y_data.trans), cur_color)
-            else:
-                draw_point = Point((cur_y * y_data.trans, cur_x * x_data.trans), cur_color)
-
-            self.drawPoint(buff, draw_point)
-            cur_x += 1
             last_error = last_error + 2 * y_data.delta - 2 * x_data.delta * y_step
 
         # end code of drawing
-
-        self.drawPoint(buff, p2)
         return
 
     def drawTriangle(self, buff: Buff, p1: Point, p2: Point, p3: Point,
-                     doSmooth=True,doAA=False, doAAlevel=4, doTexture=False):
+                     doSmooth=True, doAA=False, doAAlevel=4, doTexture=False):
         """
         draw Triangle to buff. apply smooth color filling if doSmooth set to true, otherwise fill with first point color
         if doAA is true, apply anti-aliasing to triangle based on doAAlevel given.
