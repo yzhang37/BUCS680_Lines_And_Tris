@@ -1,6 +1,6 @@
 """
 This is the main entry of your program. Almost all things you need to implement is in this file.
-The main class Sketch inherit from CanvasBase. For the parts you need to implement, they all marked TODO.
+The main class Sketch inherit from CanvasBase. For the parts you need to implement, they all marked.
 First version Created on 09/28/2018
 
 :author: micou(Zezhou Sun)
@@ -287,11 +287,6 @@ class Sketch(CanvasBase):
         :rtype: None
         """
 
-        if doAA:
-            self.__check_AAlevel(doAAlevel)
-        # 如果支持超样本抗锯齿，那么 x 和 y 的范围都会变大
-        super_scale = 1 if not doAA else doAAlevel
-
         class AxisCalcData:
             def __init__(self, init: int, final: int):
                 delta = final - init
@@ -313,70 +308,53 @@ class Sketch(CanvasBase):
         # begin code of drawing
         last_error = 2 * y_data.delta - x_data.delta
         cur_x = cur_y = 0
-        cur_downscale_y = 0
-        subpixel_y_elevated = False
-        y_cache = [0, 0]
         while True:
-            new_downscale_y = cur_y // super_scale
-            if new_downscale_y > cur_downscale_y:
-                subpixel_y_elevated = True
-            if subpixel_y_elevated:
-                y_cache[1] += 1
+            if doSmooth:
+                t = cur_x / x_data.delta
+                cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
+                                      p1.color.g * (1-t) + p2.color.g * t,
+                                      p1.color.b * (1-t) + p2.color.b * t)
             else:
-                y_cache[0] += 1
+                cur_color = p1.color
 
-            # Only draw once if cur_x % super_scale = super_scale - 1
-            if cur_x % super_scale == super_scale - 1:
-                # Calculate how much opacity to draw for y_k and y_{k+1}, respectively
-                alpha_k = y_cache[0] / super_scale
-                alpha_k_1 = y_cache[1] / super_scale
-
-                cur_downscale_x = cur_x // super_scale
-
-                if doSmooth:
-                    t = cur_downscale_x / x_data.delta
-                    cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
-                                          p1.color.g * (1-t) + p2.color.g * t,
-                                          p1.color.b * (1-t) + p2.color.b * t)
-                else:
-                    cur_color = p1.color
-
-                # Now both points need to be drawn, and
-                # only the lightness of the two points is different
+            if not doAA:
+                # Use Bresenham's line algorithm
+                draw_x = (cur_x + x_data.init) * x_data.trans
+                draw_y = (cur_y + y_data.init) * y_data.trans
                 if x_step_mode:
-                    self.drawPoint(
-                        buff,
-                        Point(((cur_downscale_x + x_data.init) * x_data.trans,
-                              (cur_downscale_y + y_data.init) * y_data.trans), cur_color),
-                        alpha_k)
-                    self.drawPoint(
-                        buff,
-                        Point(((cur_downscale_x + x_data.init) * x_data.trans,
-                               (cur_downscale_y + y_data.init + 1) * y_data.trans), cur_color),
-                        alpha_k_1)
+                    self.drawPoint(buff, Point((draw_x, draw_y), cur_color))
                 else:
-                    self.drawPoint(
-                        buff,
-                        Point(((cur_downscale_y + y_data.init) * y_data.trans,
-                               (cur_downscale_x + x_data.init) * x_data.trans), cur_color),
-                        alpha_k)
-                    self.drawPoint(
-                        buff,
-                        Point(((cur_downscale_y + y_data.init + 1) * y_data.trans,
-                               (cur_downscale_x + x_data.init) * x_data.trans), cur_color),
-                        alpha_k_1)
-                # Clean up the y_cache after this drawing epoch is ended.
-                y_cache = [0, 0]
-                subpixel_y_elevated = False
-                cur_downscale_y = cur_y // super_scale
+                    self.drawPoint(buff, Point((draw_y, draw_x), cur_color))
+            else:
+                # Here we do not use the values computed by the Bresenham function
+                # because we need to calculate the ratio between lower and upper here,
+                # And extrapolating the ratio by p_k here requires more floating computation.
+                # So here we use the original function values directly.
+                value_y = cur_x * y_data.delta / x_data.delta
+                floor_y = int(value_y)
+                # We draw both floor_y and floor_y + 1 two points, with different alpha
+                alpha_k_1 = value_y - floor_y
+                alpha_k = 1 - alpha_k_1
+
+                draw_x = (cur_x + x_data.init) * x_data.trans
+                draw_y = (floor_y + y_data.init) * y_data.trans
+                draw_y_1 = (floor_y + 1 + y_data.init) * y_data.trans
+                if x_step_mode:
+                    self.drawPoint(buff, Point((draw_x, draw_y), cur_color), alpha_k)
+                    self.drawPoint(buff, Point((draw_x, draw_y_1), cur_color), alpha_k_1)
+                else:
+                    self.drawPoint(buff, Point((draw_y, draw_x), cur_color), alpha_k)
+                    self.drawPoint(buff, Point((draw_y_1, draw_x), cur_color), alpha_k_1)
 
             cur_x += 1
-            if cur_x >= (x_data.delta + 1) * super_scale:
+            if cur_x >= (x_data.delta + 1):
                 break
 
-            y_step = 1 if last_error > 0 else 0
-            cur_y += y_step
-            last_error = last_error + 2 * y_data.delta - 2 * x_data.delta * y_step
+            if not doAA:
+                # Use Bresenham's line algorithm
+                y_step = 1 if last_error > 0 else 0
+                cur_y += y_step
+                last_error = last_error + 2 * y_data.delta - 2 * x_data.delta * y_step
 
         # end code of drawing
         return
@@ -427,8 +405,8 @@ class Sketch(CanvasBase):
                        ColorType(0, 0, (1 - step / n_steps)))
             v2 = Point([center_x - int(math.sin(theta) * radius), center_y - int(math.cos(theta) * radius)],
                        ColorType(0, (1 - step / n_steps), 0))
-            self.drawLine(self.buff, v2, v0, doSmooth=True)
-            self.drawLine(self.buff, v0, v1, doSmooth=True)
+            self.drawLine(self.buff, v2, v0, doSmooth=True, doAA=self.doAA)
+            self.drawLine(self.buff, v0, v1, doSmooth=True, doAA=self.doAA)
 
     # test for lines: drawing circle and petal 
     def testCaseLine02(self, n_steps: int):
