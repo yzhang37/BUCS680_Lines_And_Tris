@@ -386,10 +386,60 @@ class Sketch(CanvasBase):
         ##### TODO 2: Write a triangle rendering function, which support smooth bilinear interpolation of the vertex color
         ##### TODO 3(For CS680 Students): Implement texture-mapped fill of triangle. Texture is stored in self.texture
         # Requirements:
-        #   1. For flat shading of the triangle, use the first vertex color.
-        #   2. Polygon scan fill algorithm and the use of barycentric coordinate are not allowed in this function
-        #   3. You should be able to support both flat shading and smooth shading, which is controlled by doSmooth
-        #   4. For texture-mapped fill of triangles, it should be controlled by doTexture flag.
+        #   1. TODO: For flat shading of the triangle, use the first vertex color.
+        #   2. TODO: Polygon scan fill algorithm and the use of barycentric coordinate are not allowed in this function
+        #   3. TODO: You should be able to support both flat shading and smooth shading, which is controlled by doSmooth
+        #   4. TODO: For texture-mapped fill of triangles, it should be controlled by doTexture flag.
+
+        # Sort the three points by the y-coordinate from smallest to largest
+        points = [p1, p2, p3]
+        points.sort(key=lambda p: p.coords[1])
+        # Draw the triangle as two parts, top and bottom.
+        first_point = last_point = None
+        middle_point_1 = middle_point_2 = None
+
+        # If the y-value of the 1st point and the 2nd point are not the same
+        if points[0].coords[1] < points[1].coords[1]:
+            first_point = points[0]
+            # If the y-value of the 2nd point and the 3rd point are not the same
+            if points[1].coords[1] < points[2].coords[1]:
+                last_point = points[2]
+                # Select the point as the middle point
+                middle_point_1 = points[1]
+                # Another point needs to be interpolated,
+                # calculating the x-coordinate and the value of rgb
+                new_y = middle_point_1.coords[1]
+                new_t = (middle_point_1.coords[1] -
+                         first_point.coords[1]) / (last_point.coords[1] - first_point.coords[1])
+                new_x = first_point.coords[0] * (1 - new_t) + last_point.coords[0] * new_t
+                new_r = first_point.color.r * (1 - new_t) + last_point.color.r * new_t
+                new_g = first_point.color.g * (1 - new_t) + last_point.color.g * new_t
+                new_b = first_point.color.b * (1 - new_t) + last_point.color.b * new_t
+                middle_point_2 = Point((new_x, new_y), ColorType(new_r, new_g, new_b))
+            else:
+                # If y-value of the second point and the third point are same
+                middle_point_1 = points[1]
+                middle_point_2 = points[2]
+
+            # Middle two points should be sorted from smallest to largest
+            if middle_point_1.coords[0] > middle_point_2.coords[0]:
+                middle_point_1, middle_point_2 = middle_point_2, middle_point_1
+        else:
+            middle_point_1 = points[0]
+            middle_point_2 = points[1]
+            # If the second point and the third point has different y-value
+            if points[1].coords[1] < points[2].coords[1]:
+                last_point = points[2]
+            else:
+                # Show that the three points are on the same horizontal line and
+                # therefore the triangle is degenerate into a horizontal straight line.
+                # Sort the three points by x coordinate from smallest to largest
+                points.sort(key=lambda p: p.coords[0])
+                middle_point_1 = points[0]
+                middle_point_2 = points[2]
+
+        
+
         return
 
     # test for lines lines in all directions
