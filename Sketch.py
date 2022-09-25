@@ -302,7 +302,7 @@ class Sketch(CanvasBase):
             def drawLineCallback(x_point, y_point, t, eof: bool):
                 if not eof:
                     self.drawPoint(buff, Point((x_point, y_point),
-                                self.interpolate_color(p1.color, p2.color, t) if doSmooth else p1.color))
+                        self.interpolate_color(p1.color, p2.color, t) if doSmooth else p1.color))
 
             self.bresenham_iterator(p1.coords[0], p1.coords[1], p2.coords[0], p2.coords[1], drawLineCallback)
         else:
@@ -344,12 +344,8 @@ class Sketch(CanvasBase):
         :type doTexture: bool
         :rtype: None
         """
-        ##### TODO 2: Write a triangle rendering function, which support smooth bilinear interpolation of the vertex color
         ##### TODO 3(For CS680 Students): Implement texture-mapped fill of triangle. Texture is stored in self.texture
         # Requirements:
-        #   1. TODO: For flat shading of the triangle, use the first vertex color.
-        #   2. TODO: Polygon scan fill algorithm and the use of barycentric coordinate are not allowed in this function
-        #   3. TODO: You should be able to support both flat shading and smooth shading, which is controlled by doSmooth
         #   4. TODO: For texture-mapped fill of triangles, it should be controlled by doTexture flag.
 
         # Sort the three points by the y-value from smallest to largest
@@ -357,7 +353,6 @@ class Sketch(CanvasBase):
         points.sort(key=lambda p: p.coords[1])
         # Draw the triangle as two parts, top and bottom.
         first_point = last_point = None
-        middle_point_1 = middle_point_2 = None
 
         # If the y-value of the 1st point and the 2nd point are not the same
         if points[0].coords[1] < points[1].coords[1]:
@@ -472,12 +467,33 @@ class Sketch(CanvasBase):
         for y in range(points[0].coords[1], points[2].coords[1] + 1):
             x1, x2 = p1_y2x[y]
             x3, x4 = p2_y2x[y]
-            for x in range(x1, x2 + 1):
-                self.drawPoint(buff, Point((x, y), ColorType(1, 1, 1)))
-            for x in range(x2 + 1, x3):
-                self.drawPoint(buff, Point((x, y), ColorType(1, 0, 0)))
-            for x in range(x3, x4 + 1):
-                self.drawPoint(buff, Point((x, y), ColorType(1, 1, 1)))
+
+            color, color1, color2 = None, None, None
+            if not doSmooth:
+                # If not smooth, then use the color of the first point
+                color = p1.color
+            else:
+                # Calculate the color of the point at the beginning and end of the line
+                if y <= middle_point_1.coords[1]:
+                    t = (y - first_point.coords[1]) / (middle_point_1.coords[1] - first_point.coords[1])
+                    color1 = self.interpolate_color(first_point.color, middle_point_1.color, t)
+                    color2 = self.interpolate_color(first_point.color, middle_point_2.color, t)
+                else:
+                    t = (y - middle_point_1.coords[1]) / (last_point.coords[1] - middle_point_1.coords[1])
+                    color1 = self.interpolate_color(middle_point_1.color, last_point.color, t)
+                    color2 = self.interpolate_color(middle_point_2.color, last_point.color, t)
+
+            for x in range(x1, x4 + 1):
+                if doSmooth:
+                    t = (x - x1) / (x4 - x1) if x4 > x1 else 0
+                    color = self.interpolate_color(color1, color2, t)
+                if x2 < x < x3:
+                    self.drawPoint(buff, Point((x, y), color))
+                elif not doAA:
+                    # boundary part
+                    # It must be not doAA to draw,
+                    # otherwise the boundary need to call the anti-aliasing algorithm to draw.
+                    self.drawPoint(buff, Point((x, y), color))
         return
 
     @staticmethod
