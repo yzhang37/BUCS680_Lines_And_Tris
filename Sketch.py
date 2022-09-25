@@ -29,6 +29,15 @@ except Exception:
     raise ImportError
 
 
+class AxisCalcData:
+    def __init__(self, init: int, final: int):
+        delta = final - init
+        self.delta = abs(delta)
+        self.trans = 1 if delta >= 0 else -1
+        self.init = init * self.trans
+        self.final = final * self.trans
+
+
 class Sketch(CanvasBase):
     """
     Please don't forget to override interrupt methods, otherwise NotImplementedError will throw out
@@ -289,74 +298,23 @@ class Sketch(CanvasBase):
         :rtype: None
         """
 
-        class AxisCalcData:
-            def __init__(self, init: int, final: int):
-                delta = final - init
-                self.delta = abs(delta)
-                self.trans = 1 if delta >= 0 else -1
-                self.init = init * self.trans
-                self.final = final * self.trans
+        if not doAA:
+            def drawLineCallback(x_point, y_point, t):
+                self.drawPoint(
+                    buff, Point((x_point, y_point),
+                                self.interpolate_color(p1.color, p2.color, t) if doSmooth else p1.color))
 
-        x_data = AxisCalcData(init=p1.coords[0], final=p2.coords[0])
-        y_data = AxisCalcData(init=p1.coords[1], final=p2.coords[1])
-
-        x_step_mode = False
-        if abs(y_data.delta) <= abs(x_data.delta):
-            x_step_mode = True
+            self.bresenham_iterator(p1.coords[0], p1.coords[1], p2.coords[0], p2.coords[1], drawLineCallback)
         else:
-            # If not x_step_mode, then swap all x and y variables
-            y_data, x_data = x_data, y_data
-
-        # begin code of drawing
-        last_error = 2 * y_data.delta - x_data.delta
-        cur_x = cur_y = 0
-        while True:
-            if doSmooth:
-                t = cur_x / x_data.delta
-                cur_color = ColorType(p1.color.r * (1-t) + p2.color.r * t,
-                                      p1.color.g * (1-t) + p2.color.g * t,
-                                      p1.color.b * (1-t) + p2.color.b * t)
-            else:
-                cur_color = p1.color
-
-            if not doAA:
-                # Use Bresenham's line algorithm
-                draw_x = (cur_x + x_data.init) * x_data.trans
-                draw_y = (cur_y + y_data.init) * y_data.trans
-                if x_step_mode:
-                    self.drawPoint(buff, Point((draw_x, draw_y), cur_color))
-                else:
-                    self.drawPoint(buff, Point((draw_y, draw_x), cur_color))
-            else:
-                # Here we do not use the values computed by the Bresenham function
-                # because we need to calculate the ratio between lower and upper here,
-                # And extrapolating the ratio by p_k here requires more floating computation.
-                # So here we use the original function values directly.
-                value_y = cur_x * y_data.delta / x_data.delta
-                floor_y = int(value_y)
-                # We draw both floor_y and floor_y + 1 two points, with different alpha
-                alpha_k_1 = value_y - floor_y
-                alpha_k = 1 - alpha_k_1
-
-                draw_x = (cur_x + x_data.init) * x_data.trans
-                draw_y = (floor_y + y_data.init) * y_data.trans
-                draw_y_1 = (floor_y + 1 + y_data.init) * y_data.trans
-                if x_step_mode:
-                    self.drawPoint(buff, Point((draw_x, draw_y), cur_color), alpha_k)
-                    self.drawPoint(buff, Point((draw_x, draw_y_1), cur_color), alpha_k_1)
-                else:
-                    self.drawPoint(buff, Point((draw_y, draw_x), cur_color), alpha_k)
-                    self.drawPoint(buff, Point((draw_y_1, draw_x), cur_color), alpha_k_1)
-
-            cur_x += 1
-            if cur_x >= (x_data.delta + 1):
-                break
-
-            if not doAA:
-                # Use Bresenham's line algorithm
-                y_step = 1 if last_error > 0 else 0
-                cur_y += y_step
-                last_error = last_error + 2 * y_data.delta - 2 * x_data.delta * y_step
+            # Here we do not use the values computed by the Bresenham function
+            # because we need to calculate the ratio between lower and upper here,
+            # And extrapolating the ratio by p_k here requires more floating computation.
+            # So here we use the original function values directly.
+            def drawAACallback(x1, y1, a1, x2, y2, a2, t):
+                cur_color = self.interpolate_color(p1.color, p2.color, t) if doSmooth else p1.color
+                self.drawPoint(buff, Point((x1, y1), cur_color), a1)
+                self.drawPoint(buff, Point((x2, y2), cur_color), a2)
+            self.antialias_iterator(p1.coords[0], p1.coords[1], p2.coords[0], p2.coords[1], drawAACallback)
 
         # end code of drawing
         return
@@ -448,12 +406,92 @@ class Sketch(CanvasBase):
             print(f"last_point: {last_point.coords if last_point else None}")
 
         if first_point is not None:
+            data_x1 = AxisCalcData(first_point.coords[0], middle_point_1.coords[0])
+            data_y1 = AxisCalcData(first_point.coords[1], middle_point_1.coords[1])
+            data_x2 = AxisCalcData(first_point.coords[0], middle_point_2.coords[0])
+            data_y2 = AxisCalcData(first_point.coords[1], middle_point_2.coords[1])
+
+            cur_x1 = cur_x2 = cur_y1 = cur_y2 = 0
+            for x in range(first_point.coords[0], middle_point_1.coords[0]):
+                # 分别对两个点做 Bresenham 平移，记录两个点的 x 值如何发生变化。
+                # 如果 x 变化，加入到下一组中，然后开始下一组的计算。
+                pass
+
+
             # TODO: Draw the top part
             pass
         if last_point is not None:
             # TODO: Draw the bottom part
             pass
         return
+
+    @staticmethod
+    def bresenham_iterator(x1, y1, x2, y2, callback):
+        x_data = AxisCalcData(x1, x2)
+        y_data = AxisCalcData(y1, y2)
+        x_step_mode = False
+        if abs(y_data.delta) <= abs(x_data.delta):
+            x_step_mode = True
+        else:
+            x_data, y_data = y_data, x_data
+        p = 2 * y_data.delta - x_data.delta
+
+        cur_x = cur_y = 0
+        while True:
+            if x_data.delta > 0:
+                t = cur_x / x_data.delta
+            else:
+                t = 1
+            draw_x = (cur_x + x_data.init) * x_data.trans
+            draw_y = (cur_y + y_data.init) * y_data.trans
+            if x_step_mode:
+                callback(draw_x, draw_y, t)
+            else:
+                callback(draw_y, draw_x, t)
+            cur_x += 1
+            if cur_x >= (x_data.delta + 1):
+                break
+            y_step = 1 if p > 0 else 0
+            cur_y += y_step
+            p = p + 2 * y_data.delta - 2 * x_data.delta * y_step
+
+    @staticmethod
+    def antialias_iterator(x1, y1, x2, y2, callback):
+        x_data = AxisCalcData(x1, x2)
+        y_data = AxisCalcData(y1, y2)
+        x_step_mode = False
+        if abs(y_data.delta) <= abs(x_data.delta):
+            x_step_mode = True
+        else:
+            x_data, y_data = y_data, x_data
+
+        for cur_x in range(0, x_data.delta + 1):
+            if x_data.delta > 0:
+                t = cur_x / x_data.delta
+            else:
+                t = 1
+            value_y = cur_x * y_data.delta / x_data.delta
+            floor_y = int(value_y)
+            alpha_k_1 = value_y - floor_y
+            alpha_k = 1 - alpha_k_1
+
+            draw_x = (cur_x + x_data.init) * x_data.trans
+            draw_y = (floor_y + y_data.init) * y_data.trans
+            draw_y_1 = (floor_y + 1 + y_data.init) * y_data.trans
+            if x_step_mode:
+                callback(draw_x, draw_y, alpha_k, draw_x, draw_y_1, alpha_k_1, t)
+            else:
+                callback(draw_y, draw_x, alpha_k, draw_y_1, draw_x, alpha_k_1, t)
+
+    @staticmethod
+    def interpolate_color(color1: ColorType,
+                          color2: ColorType,
+                          t: float):
+        return ColorType(
+            color1.r * (1 - t) + color2.r * t,
+            color1.g * (1 - t) + color2.g * t,
+            color1.b * (1 - t) + color2.b * t,
+        )
 
     # test for lines lines in all directions
     def testCaseLine01(self, n_steps: int):
