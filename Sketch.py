@@ -299,9 +299,9 @@ class Sketch(CanvasBase):
         """
 
         if not doAA:
-            def drawLineCallback(x_point, y_point, t):
-                self.drawPoint(
-                    buff, Point((x_point, y_point),
+            def drawLineCallback(x_point, y_point, t, eof: bool):
+                if not eof:
+                    self.drawPoint(buff, Point((x_point, y_point),
                                 self.interpolate_color(p1.color, p2.color, t) if doSmooth else p1.color))
 
             self.bresenham_iterator(p1.coords[0], p1.coords[1], p2.coords[0], p2.coords[1], drawLineCallback)
@@ -310,10 +310,11 @@ class Sketch(CanvasBase):
             # because we need to calculate the ratio between lower and upper here,
             # And extrapolating the ratio by p_k here requires more floating computation.
             # So here we use the original function values directly.
-            def drawAACallback(x1, y1, a1, x2, y2, a2, t):
-                cur_color = self.interpolate_color(p1.color, p2.color, t) if doSmooth else p1.color
-                self.drawPoint(buff, Point((x1, y1), cur_color), a1)
-                self.drawPoint(buff, Point((x2, y2), cur_color), a2)
+            def drawAACallback(x1, y1, a1, x2, y2, a2, t, eof: bool):
+                if not eof:
+                    cur_color = self.interpolate_color(p1.color, p2.color, t) if doSmooth else p1.color
+                    self.drawPoint(buff, Point((x1, y1), cur_color), a1)
+                    self.drawPoint(buff, Point((x2, y2), cur_color), a2)
             self.antialias_iterator(p1.coords[0], p1.coords[1], p2.coords[0], p2.coords[1], drawAACallback)
 
         # end code of drawing
@@ -351,82 +352,117 @@ class Sketch(CanvasBase):
         #   3. TODO: You should be able to support both flat shading and smooth shading, which is controlled by doSmooth
         #   4. TODO: For texture-mapped fill of triangles, it should be controlled by doTexture flag.
 
-        # Sort the three points by the x-value from smallest to largest
+        # Sort the three points by the y-value from smallest to largest
         points = [p1, p2, p3]
-        points.sort(key=lambda p: p.coords[0])
-        # Draw the triangle as two parts, left and right.
+        points.sort(key=lambda p: p.coords[1])
+        # Draw the triangle as two parts, top and bottom.
         first_point = last_point = None
         middle_point_1 = middle_point_2 = None
 
-        # If the x-value of the 1st point and the 2nd point are not the same
-        if points[0].coords[0] < points[1].coords[0]:
+        # If the y-value of the 1st point and the 2nd point are not the same
+        if points[0].coords[1] < points[1].coords[1]:
             first_point = points[0]
-            # If the x-value of the 2nd point and the 3rd point are not the same
-            if points[1].coords[0] < points[2].coords[0]:
+            # If the y-value of the 2nd point and the 3rd point are not the same
+            if points[1].coords[1] < points[2].coords[1]:
                 last_point = points[2]
                 # Select the point as the middle point
                 middle_point_1 = points[1]
                 # Another point needs to be interpolated,
                 # calculating the x-coordinate and the value of rgb
-                new_x = middle_point_1.coords[0]
+                new_y = middle_point_1.coords[1]
                 new_t = (middle_point_1.coords[1] -
                          first_point.coords[1]) / (last_point.coords[1] - first_point.coords[1])
-                new_y = first_point.coords[1] * (1 - new_t) + last_point.coords[1] * new_t
+                new_x = first_point.coords[0] * (1 - new_t) + last_point.coords[0] * new_t
                 new_r = first_point.color.r * (1 - new_t) + last_point.color.r * new_t
                 new_g = first_point.color.g * (1 - new_t) + last_point.color.g * new_t
                 new_b = first_point.color.b * (1 - new_t) + last_point.color.b * new_t
                 middle_point_2 = Point((new_x, new_y), ColorType(new_r, new_g, new_b))
             else:
-                # If x-value of the second point and the third point are same
+                # If y-value of the second point and the third point are same
                 middle_point_1 = points[1]
                 middle_point_2 = points[2]
 
-            # Sort middle points' y-value from smallest to largest
-            if middle_point_1.coords[1] > middle_point_2.coords[1]:
+            # Middle two points should be sorted from smallest to largest
+            if middle_point_1.coords[0] > middle_point_2.coords[0]:
                 middle_point_1, middle_point_2 = middle_point_2, middle_point_1
         else:
             middle_point_1 = points[0]
             middle_point_2 = points[1]
-            # If the second point and the third point has different x-value
-            if points[1].coords[0] < points[2].coords[0]:
+            # If the second point and the third point has different y-value
+            if points[1].coords[1] < points[2].coords[1]:
                 last_point = points[2]
             else:
                 # Show that the three points are on the same horizontal line and
                 # therefore the triangle is degenerate into a horizontal straight line.
-                # Sort the three points by y coordinate from smallest to largest
-                points.sort(key=lambda p: p.coords[1])
+                # Sort the three points by x coordinate from smallest to largest
+                points.sort(key=lambda p: p.coords[0])
                 middle_point_1 = points[0]
                 middle_point_2 = points[2]
 
-        # TODO: for testing only
         if self.debug:
-            print("Triangle details:")
+            print("Up and bottom parts:")
             print(f"first_point: {first_point.coords if first_point else None}")
             print(f"middle_points: {middle_point_1.coords}, {middle_point_2.coords}")
             print(f"last_point: {last_point.coords if last_point else None}")
+            print()
+
+        # last_y is used to traverse y in Bresenham using
+        last_y = None
+        last_x_begin = last_x_end = 0
+        p1_y2x = {}
+        p2_y2x = {}
+
+        def addEdge(d: dict, y: int, x1: int, x2: int):
+            if x1 > x2:
+                x1, x2 = x2, x1
+            d[y] = (x1, x2)
+        def find_point_edge(x: int, y: int, eof: bool,
+                            dict_to_store: typing.Dict[int, typing.Tuple[int, int]]):
+            nonlocal last_y, last_x_begin, last_x_end
+            if last_y is None:
+                last_y = y
+                last_x_begin = last_x_end = x
+            elif last_y != y:
+                addEdge(dict_to_store, last_y, last_x_begin, last_x_end)
+                last_y = y
+                last_x_begin = last_x_end = x
+            else:
+                last_x_end = x
+            if eof:
+                addEdge(dict_to_store, last_y, last_x_begin, last_x_end)
 
         if first_point is not None:
-            data_x1 = AxisCalcData(first_point.coords[0], middle_point_1.coords[0])
-            data_y1 = AxisCalcData(first_point.coords[1], middle_point_1.coords[1])
-            data_x2 = AxisCalcData(first_point.coords[0], middle_point_2.coords[0])
-            data_y2 = AxisCalcData(first_point.coords[1], middle_point_2.coords[1])
-
-            cur_x1 = cur_x2 = cur_y1 = cur_y2 = 0
-            for x in range(first_point.coords[0], middle_point_1.coords[0]):
-                # 分别对两个点做 Bresenham 平移，记录两个点的 x 值如何发生变化。
-                # 如果 x 变化，加入到下一组中，然后开始下一组的计算。
-                pass
-
-
-            # TODO: Draw the top part
-            pass
+            self.bresenham_iterator(first_point.coords[0], first_point.coords[1],
+                                    middle_point_1.coords[0], middle_point_1.coords[1],
+                                    lambda x, y, t, eof:  find_point_edge(x, y, eof, p1_y2x))
+            self.bresenham_iterator(first_point.coords[0], first_point.coords[1],
+                                    middle_point_2.coords[0], middle_point_2.coords[1],
+                                    lambda x, y, t, eof:  find_point_edge(x, y, eof, p2_y2x))
         if last_point is not None:
-            # TODO: Draw the bottom part
-            pass
+            self.bresenham_iterator(middle_point_1.coords[0], middle_point_1.coords[1],
+                                    last_point.coords[0], last_point.coords[1],
+                                    lambda x, y, t, eof:  find_point_edge(x, y, eof, p1_y2x))
+            self.bresenham_iterator(middle_point_2.coords[0], middle_point_2.coords[1],
+                                    last_point.coords[0], last_point.coords[1],
+                                    lambda x, y, t, eof:  find_point_edge(x, y, eof, p2_y2x))
+
+        for y in range(points[0].coords[1], points[2].coords[1] + 1):
+            x1, x2 = p1_y2x[y]
+            x3, x4 = p2_y2x[y]
+            for x in range(x1, x2 + 1):
+                self.drawPoint(buff, Point((x, y), ColorType(1, 1, 1)))
+            for x in range(x2 + 1, x3):
+                self.drawPoint(buff, Point((x, y), ColorType(1, 0, 0)))
+            for x in range(x3, x4 + 1):
+                self.drawPoint(buff, Point((x, y), ColorType(1, 1, 1)))
         return
 
     @staticmethod
-    def bresenham_iterator(x1, y1, x2, y2, callback):
+    def bresenham_iterator(x1, y1, x2, y2, callback: typing.Callable[[int, int, float, bool], None]):
+        x1 = round(x1)
+        x2 = round(x2)
+        y1 = round(y1)
+        y2 = round(y2)
         x_data = AxisCalcData(x1, x2)
         y_data = AxisCalcData(y1, y2)
         x_step_mode = False
@@ -445,18 +481,22 @@ class Sketch(CanvasBase):
             draw_x = (cur_x + x_data.init) * x_data.trans
             draw_y = (cur_y + y_data.init) * y_data.trans
             if x_step_mode:
-                callback(draw_x, draw_y, t)
+                callback(draw_x, draw_y, t, False)
             else:
-                callback(draw_y, draw_x, t)
+                callback(draw_y, draw_x, t, False)
             cur_x += 1
             if cur_x >= (x_data.delta + 1):
                 break
             y_step = 1 if p > 0 else 0
             cur_y += y_step
             p = p + 2 * y_data.delta - 2 * x_data.delta * y_step
+        callback(0, 0, 0, True)
 
     @staticmethod
-    def antialias_iterator(x1, y1, x2, y2, callback):
+    def antialias_iterator(x1, y1, x2, y2,
+                           callback: typing.Callable[[int, int, float,
+                                                      int, int, float,
+                                                      float, bool], None]):
         x_data = AxisCalcData(x1, x2)
         y_data = AxisCalcData(y1, y2)
         x_step_mode = False
@@ -479,9 +519,10 @@ class Sketch(CanvasBase):
             draw_y = (floor_y + y_data.init) * y_data.trans
             draw_y_1 = (floor_y + 1 + y_data.init) * y_data.trans
             if x_step_mode:
-                callback(draw_x, draw_y, alpha_k, draw_x, draw_y_1, alpha_k_1, t)
+                callback(draw_x, draw_y, alpha_k, draw_x, draw_y_1, alpha_k_1, t, False)
             else:
-                callback(draw_y, draw_x, alpha_k, draw_y_1, draw_x, alpha_k_1, t)
+                callback(draw_y, draw_x, alpha_k, draw_y_1, draw_x, alpha_k_1, t, False)
+        callback(0, 0, 0, 0, 0, 0, 0, True)
 
     @staticmethod
     def interpolate_color(color1: ColorType,
