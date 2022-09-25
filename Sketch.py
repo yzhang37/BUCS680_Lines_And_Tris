@@ -55,12 +55,12 @@ class Sketch(CanvasBase):
     * doTexture(bool): Control flag of doing texture mapping
     * doSmooth(bool): Control flag of doing smooth
     * doAA(bool): Control flag of doing anti-aliasing
-    * doAAlevel(int): anti-alising super sampling level
+    * doAAlevel(int): anti-aliasing super sampling level
         
     Method Instruction:
 
     * Interrupt_MouseL(R): Used to deal with mouse click interruption. Canvas will be refreshed with updated buff
-    * Interrupt_Keyboard: Used to deal with key board press interruption. Use this to add new keys or new methods
+    * Interrupt_Keyboard: Used to deal with keyboard press interruption. Use this to add new keys or new methods
     * drawPoint: method to draw a point
     * drawLine: method to draw a line
     * drawTriangle: method to draw a triangle with filling and smoothing
@@ -114,7 +114,7 @@ class Sketch(CanvasBase):
                                self.testCaseTriTexture01]  # method at here must accept one argument, n_steps
         # Try to read texture file
         if os.path.isfile(self.texture_file_path):
-            # Read image and make it to an ndarray
+            # Read image and make it to a ndarray
             texture_image = Image.open(self.texture_file_path)
             texture_array = np.array(texture_image).astype(np.uint8)
             # Because imported image is upside down, reverse it
@@ -297,7 +297,7 @@ class Sketch(CanvasBase):
             def drawLineCallback(x_point, y_point, t, eof: bool):
                 if not eof:
                     self.drawPoint(buff, Point((x_point, y_point),
-                        self.interpolate_color(p1.color, p2.color, t) if doSmooth else p1.color))
+                                               self.interpolate_color(p1.color, p2.color, t) if doSmooth else p1.color))
 
             self.bresenham_iterator(p1.coords[0], p1.coords[1], p2.coords[0], p2.coords[1], drawLineCallback)
         else:
@@ -771,7 +771,8 @@ if __name__ == "__main__":
         # Set FULL_REPAINT_ON_RESIZE will repaint everything when scaling the frame
         # here is the style setting for it: wx.DEFAULT_FRAME_STYLE | wx.FULL_REPAINT_ON_RESIZE
         # wx.DEFAULT_FRAME_STYLE ^ wx.RESIZE_BORDER will disable canvas resize.
-        frame = wx.Frame(None, size=(500, 500), title="Test", style=wx.DEFAULT_FRAME_STYLE & ~(wx.RESIZE_BORDER | wx.MAXIMIZE_BOX))
+        frame = wx.Frame(None, size=(500, 500), title="Test",
+                         style=wx.DEFAULT_FRAME_STYLE & ~(wx.RESIZE_BORDER | wx.MAXIMIZE_BOX))
 
         canvas = Sketch(frame)
         canvas.debug = 0
