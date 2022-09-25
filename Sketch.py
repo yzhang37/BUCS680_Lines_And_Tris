@@ -234,9 +234,9 @@ class Sketch(CanvasBase):
         """
         if self.debug > 1:
             if x != min(max(0, int(x)), texture.width - 1):
-                print("Warning: Texture Query x coordinate outbound")
+                print(f"Warning: Texture Query x: {x} coordinate outbound")
             if y != min(max(0, int(y)), texture.height - 1):
-                print("Warning: Texture Query y coordinate outbound")
+                print(f"Warning: Texture Query y: {y} coordinate outbound")
         return texture.getPointFromPointArray(x, y)
 
     @staticmethod
@@ -254,22 +254,17 @@ class Sketch(CanvasBase):
         """
         x, y = point.coords
         color = point.color
-        r = color.r
-        g = color.g
-        b = color.b
 
         if alpha <= 0.0:
             return
         elif alpha < 1.0:
             orig_c = buff.getPoint(x, y).color
-            r = orig_c.r * (1.0 - alpha) + r * alpha
-            g = orig_c.g * (1.0 - alpha) + g * alpha
-            b = orig_c.b * (1.0 - alpha) + b * alpha
+            color = Sketch.interpolate_color(orig_c, color, alpha)
 
         # because we have already specified buff.buff has data type uint8, type conversion will be done in numpy
-        buff.buff[x, y, 0] = r * 255
-        buff.buff[x, y, 1] = g * 255
-        buff.buff[x, y, 2] = b * 255
+        buff.buff[x, y, 0] = color.r * 255
+        buff.buff[x, y, 1] = color.g * 255
+        buff.buff[x, y, 2] = color.b * 255
 
     def a(self):
         self.buff.getPoint()
@@ -368,10 +363,8 @@ class Sketch(CanvasBase):
                 new_t = (middle_point_1.coords[1] -
                          first_point.coords[1]) / (last_point.coords[1] - first_point.coords[1])
                 new_x = first_point.coords[0] * (1 - new_t) + last_point.coords[0] * new_t
-                new_r = first_point.color.r * (1 - new_t) + last_point.color.r * new_t
-                new_g = first_point.color.g * (1 - new_t) + last_point.color.g * new_t
-                new_b = first_point.color.b * (1 - new_t) + last_point.color.b * new_t
-                middle_point_2 = Point((new_x, new_y), ColorType(new_r, new_g, new_b))
+                new_color = self.interpolate_color(first_point.color, last_point.color, new_t)
+                middle_point_2 = Point((new_x, new_y), new_color)
             else:
                 # If y-value of the second point and the third point are same
                 middle_point_1 = points[1]
@@ -469,24 +462,56 @@ class Sketch(CanvasBase):
             x3, x4 = p2_y2x[y]
 
             color, color1, color2 = None, None, None
-            if not doSmooth:
-                # If not smooth, then use the color of the first point
+            texture_ty = 0
+            if not doTexture and not doSmooth:
                 color = p1.color
             else:
-                # Calculate the color of the point at the beginning and end of the line
-                if y <= middle_point_1.coords[1]:
-                    t = (y - first_point.coords[1]) / (middle_point_1.coords[1] - first_point.coords[1])
-                    color1 = self.interpolate_color(first_point.color, middle_point_1.color, t)
-                    color2 = self.interpolate_color(first_point.color, middle_point_2.color, t)
+                if doTexture:
+                    texture_ty = (y - first_point.coords[1]) / (last_point.coords[1] - first_point.coords[1]) \
+                        if (last_point.coords[1] - first_point.coords[1]) > 0 else 0
                 else:
-                    t = (y - middle_point_1.coords[1]) / (last_point.coords[1] - middle_point_1.coords[1])
-                    color1 = self.interpolate_color(middle_point_1.color, last_point.color, t)
-                    color2 = self.interpolate_color(middle_point_2.color, last_point.color, t)
+                    # Calculate the color of the point at the beginning and end of the line
+                    if y <= middle_point_1.coords[1]:
+                        t = (y - first_point.coords[1]) / (middle_point_1.coords[1] - first_point.coords[1]) \
+                            if (middle_point_1.coords[1] - first_point.coords[1]) > 0 else 0
+                        color1 = self.interpolate_color(first_point.color, middle_point_1.color, t)
+                        color2 = self.interpolate_color(first_point.color, middle_point_2.color, t)
+                    else:
+                        t = (y - middle_point_1.coords[1]) / (last_point.coords[1] - middle_point_1.coords[1]) \
+                            if (last_point.coords[1] - middle_point_1.coords[1]) > 0 else 0
+                        color1 = self.interpolate_color(middle_point_1.color, last_point.color, t)
+                        color2 = self.interpolate_color(middle_point_2.color, last_point.color, t)
 
             for x in range(x1, x4 + 1):
-                if doSmooth:
-                    t = (x - x1) / (x4 - x1) if x4 > x1 else 0
-                    color = self.interpolate_color(color1, color2, t)
+                if doTexture or doSmooth:
+                    tx = (x - x1) / (x4 - x1) if x4 > x1 else 0
+                    if not doTexture:
+                        color = self.interpolate_color(color1, color2, tx)
+                    else:
+                        map_x = tx * (self.texture.width - 1)
+                        map_y = texture_ty * (self.texture.height - 1)
+                        # do bilinear interpolation here
+                        if int(map_x) == map_x and int(map_y) == map_y:
+                            color = self.queryTextureBuffPoint(self.texture, int(map_x), int(map_y)).color
+                        elif int(map_x) == map_x and int(map_y) != map_y:
+                            color_a = self.queryTextureBuffPoint(self.texture, int(map_x), math.floor(map_y)).color
+                            color_b = self.queryTextureBuffPoint(self.texture, int(map_x), math.ceil(map_y)).color
+                            color = self.interpolate_color(color_a, color_b, map_y % 1)
+                        elif int(map_x) != map_x and int(map_y) == map_y:
+                            color_a = self.queryTextureBuffPoint(self.texture, math.floor(map_x), int(map_y)).color
+                            color_b = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), int(map_y)).color
+                            color = self.interpolate_color(color_a, color_b, map_x % 1)
+                        else:
+                            # Get the left color first
+                            color_a = self.queryTextureBuffPoint(self.texture, math.floor(map_x), math.floor(map_y)).color
+                            color_b = self.queryTextureBuffPoint(self.texture, math.floor(map_x), math.ceil(map_y)).color
+                            color_left = self.interpolate_color(color_a, color_b, map_y % 1)
+                            # Get the right color again
+                            color_a = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), math.floor(map_y)).color
+                            color_b = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), math.ceil(map_y)).color
+                            color_right = self.interpolate_color(color_a, color_b, map_y % 1)
+                            # Final: interpolation
+                            color = self.interpolate_color(color_left, color_right, map_x % 1)
                 if x2 < x < x3:
                     self.drawPoint(buff, Point((x, y), color))
                 elif not doAA:
@@ -735,5 +760,5 @@ if __name__ == "__main__":
         stats.print_stats()
 
 
-    # main()
-    codingDebug()
+    main()
+    # codingDebug()
