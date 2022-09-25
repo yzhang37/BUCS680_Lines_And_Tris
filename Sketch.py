@@ -412,12 +412,35 @@ class Sketch(CanvasBase):
         p1_y2x = {}
         p2_y2x = {}
 
+        #    x
+        #   x-xx
+        #  x----xx
+        # x-------xx
+        #
+        # Here x is the outer boundary of the triangle.
+        # --- is the inside.
+
         def addEdge(d: dict, y: int, x1: int, x2: int):
+            """
+            Utility to add edge data.
+            The edge here refers to the outer contour of the triangle.
+            It is drawn from the bottom to the top and used to set the boundary data on both sides.
+            """
             if x1 > x2:
                 x1, x2 = x2, x1
-            d[y] = (x1, x2)
+            if y not in d:
+                # If the y value has not been added yet, set a new one
+                d[y] = (x1, x2)
+            else:
+                # Merge with the old boundary if it already exists
+                d[y] = (min(d[y][0], x1), max(d[y][1], x2))
         def find_point_edge(x: int, y: int, eof: bool,
                             dict_to_store: typing.Dict[int, typing.Tuple[int, int]]):
+            """
+            Callback function used to find the boundary.
+            It detects the y-value of the point returned by Bresenham each time and
+            updates the range of x if y has not changed, otherwise it creates a new boundary.
+            """
             nonlocal last_y, last_x_begin, last_x_end
             if last_y is None:
                 last_y = y
