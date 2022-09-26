@@ -147,7 +147,7 @@ class Sketch(CanvasBase):
             if self.debug > 0:
                 print("draw a line from ", self.points_l[-1], " -> ", self.points_l[-2])
             self.drawPoint(self.buff, self.points_l[-1])
-            self.drawLine(self.buff, self.points_l[-1], self.points_l[-2],
+            self.drawLine(self.buff, self.points_l[-2], self.points_l[-1],
                           self.doSmooth, self.doAA, self.doAAlevel)
             self.points_l.clear()
 
@@ -161,7 +161,7 @@ class Sketch(CanvasBase):
         elif len(self.points_r) % 3 == 2:
             if self.debug > 0:
                 print("draw a line from ", self.points_r[-1], " -> ", self.points_r[-2])
-            self.drawLine(self.buff, self.points_r[-1], self.points_r[-2],
+            self.drawLine(self.buff, self.points_r[-2], self.points_r[-1],
                           self.doSmooth, self.doAA, self.doAAlevel)
         elif len(self.points_r) % 3 == 0 and len(self.points_r) > 0:
             if self.debug > 0:
@@ -342,19 +342,21 @@ class Sketch(CanvasBase):
         """
 
         # Sort the three points by the y-value from smallest to largest
-        points = [p1, p2, p3]
-        points.sort(key=lambda p: p.coords[1])
+        pt_sorted_y = [p1, p2, p3]
+        pt_sorted_y.sort(key=lambda p: p.coords[1])
+        pt_sorted_x = [p1, p2, p3]
+        pt_sorted_x.sort(key=lambda p: p.coords[0])
         # Draw the triangle as two parts, top and bottom.
         first_point = last_point = None
 
         # If the y-value of the 1st point and the 2nd point are not the same
-        if points[0].coords[1] < points[1].coords[1]:
-            first_point = points[0]
+        if pt_sorted_y[0].coords[1] < pt_sorted_y[1].coords[1]:
+            first_point = pt_sorted_y[0]
             # If the y-value of the 2nd point and the 3rd point are not the same
-            if points[1].coords[1] < points[2].coords[1]:
-                last_point = points[2]
+            if pt_sorted_y[1].coords[1] < pt_sorted_y[2].coords[1]:
+                last_point = pt_sorted_y[2]
                 # Select the point as the middle point
-                middle_point_1 = points[1]
+                middle_point_1 = pt_sorted_y[1]
                 # Another point needs to be interpolated,
                 # calculating the x-coordinate and the value of rgb
                 new_y = middle_point_1.coords[1]
@@ -364,25 +366,27 @@ class Sketch(CanvasBase):
                 middle_point_2 = Point((new_x, new_y), new_color)
             else:
                 # If y-value of the second point and the third point are same
-                middle_point_1 = points[1]
-                middle_point_2 = points[2]
+                middle_point_1 = pt_sorted_y[1]
+                middle_point_2 = pt_sorted_y[2]
 
             # Middle two points should be sorted from smallest to largest
             if middle_point_1.coords[0] > middle_point_2.coords[0]:
                 middle_point_1, middle_point_2 = middle_point_2, middle_point_1
         else:
-            middle_point_1 = points[0]
-            middle_point_2 = points[1]
+            middle_point_1 = pt_sorted_y[0]
+            middle_point_2 = pt_sorted_y[1]
             # If the second point and the third point has different y-value
-            if points[1].coords[1] < points[2].coords[1]:
-                last_point = points[2]
+            if pt_sorted_y[1].coords[1] < pt_sorted_y[2].coords[1]:
+                if middle_point_1.coords[0] > middle_point_2.coords[0]:
+                    middle_point_1, middle_point_2 = middle_point_2, middle_point_1
+                last_point = pt_sorted_y[2]
             else:
                 # Show that the three points are on the same horizontal line and
                 # therefore the triangle is degenerate into a horizontal straight line.
                 # Sort the three points by x coordinate from smallest to largest
-                points.sort(key=lambda p: p.coords[0])
-                middle_point_1 = points[0]
-                middle_point_2 = points[2]
+                pt_sorted_y.sort(key=lambda p: p.coords[0])
+                middle_point_1 = pt_sorted_y[0]
+                middle_point_2 = pt_sorted_y[2]
 
         if self.debug:
             print("Up and bottom parts:")
@@ -454,7 +458,7 @@ class Sketch(CanvasBase):
                                     last_point.coords[0], last_point.coords[1],
                                     lambda x, y, t, eof:  find_point_edge(x, y, eof, p2_y2x))
 
-        for y in range(points[0].coords[1], points[2].coords[1] + 1):
+        for y in range(pt_sorted_y[0].coords[1], pt_sorted_y[2].coords[1] + 1):
             x1, x2 = p1_y2x[y]
             x3, x4 = p2_y2x[y]
 
@@ -464,17 +468,31 @@ class Sketch(CanvasBase):
                 color = p1.color
             else:
                 if doTexture:
-                    texture_ty = Sketch.ratio(first_point.coords[1], y, last_point.coords[1])
+                    # Here the position of the y-value relative to the height of
+                    # the whole triangle is needed (highest point - lowest point position)
+                    texture_ty = Sketch.ratio(pt_sorted_y[0].coords[1], y, pt_sorted_y[2].coords[1])
                 else:
                     # Calculate the color of the point at the beginning and end of the line
                     if y <= middle_point_1.coords[1]:
-                        t = Sketch.ratio(first_point.coords[1], y, middle_point_1.coords[1])
-                        color1 = self.interpolate_color(first_point.color, middle_point_1.color, t)
-                        color2 = self.interpolate_color(first_point.color, middle_point_2.color, t)
+                        # Here, if y is in the upper half of the triangle,
+                        # we need to calculate the position of y relative to the height of the upper half
+                        if first_point is not None:
+                            t = Sketch.ratio(first_point.coords[1], y, middle_point_1.coords[1])
+                            color1 = self.interpolate_color(first_point.color, middle_point_1.color, t)
+                            color2 = self.interpolate_color(first_point.color, middle_point_2.color, t)
+                        else:
+                            color1 = middle_point_1.color
+                            color2 = middle_point_2.color
                     else:
-                        t = Sketch.ratio(middle_point_1.coords[1], y, last_point.coords[1])
-                        color1 = self.interpolate_color(middle_point_1.color, last_point.color, t)
-                        color2 = self.interpolate_color(middle_point_2.color, last_point.color, t)
+                        # Here, if y is in the lower half of the triangle,
+                        # we need to calculate the position of y relative to the height of the lower half
+                        if last_point is not None:
+                            t = Sketch.ratio(middle_point_1.coords[1], y, last_point.coords[1])
+                            color1 = self.interpolate_color(middle_point_1.color, last_point.color, t)
+                            color2 = self.interpolate_color(middle_point_2.color, last_point.color, t)
+                        else:
+                            color1 = middle_point_1.color
+                            color2 = middle_point_2.color
 
             # I'm going to let it draw half of the outer edges,
             # in non-anti-aliased mode.
@@ -482,7 +500,6 @@ class Sketch(CanvasBase):
             aa_right = math.ceil(Sketch.interpolate(x3, x4, 0.5))
 
             for x in range(x1, x4 + 1):
-
                 if doTexture or doSmooth:
                     tx = Sketch.ratio(x1, x, x4)
                     if not doTexture:
@@ -522,12 +539,26 @@ class Sketch(CanvasBase):
                 self.drawPoint(buff, Point((x1, y1), clr), a1)
                 self.drawPoint(buff, Point((x2, y2), clr), a2)
 
-            Sketch.antialias_iterator(points[0].coords[0], points[0].coords[1], points[1].coords[0], points[1].coords[1],
-                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, points[0].color, points[1].color))
-            Sketch.antialias_iterator(points[0].coords[0], points[0].coords[1], points[2].coords[0], points[2].coords[1],
-                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, points[0].color, points[2].color))
-            Sketch.antialias_iterator(points[1].coords[0], points[1].coords[1], points[2].coords[0], points[2].coords[1],
-                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, points[1].color, points[2].color))
+            pt1_x = pt_sorted_y[0].coords[0]
+            pt1_y = pt_sorted_y[0].coords[1]
+            pt1_clr = pt_sorted_y[0].color
+            pt2_x = pt_sorted_y[1].coords[0]
+            pt2_y = pt_sorted_y[1].coords[1]
+            pt2_clr = pt_sorted_y[1].color
+            pt3_x = pt_sorted_y[2].coords[0]
+            pt3_y = pt_sorted_y[2].coords[1]
+            pt3_clr = pt_sorted_y[2].color
+
+            Sketch.antialias_iterator(pt1_x, pt1_y, pt2_x, pt2_y,
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, pt1_clr, pt2_clr))
+
+            # draw from point 1 to point 3
+            Sketch.antialias_iterator(pt1_x, pt1_y, pt3_x, pt3_y,
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, pt1_clr, pt3_clr))
+
+            # draw from point 2 to point 3
+            Sketch.antialias_iterator(pt2_x, pt2_y, pt3_x, pt3_y,
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, pt2_clr, pt3_clr))
         return
 
     def textureAutoMapping(self, map_x, map_y) -> ColorType:
