@@ -1,6 +1,6 @@
 """
 This is the main entry of your program. Almost all things you need to implement is in this file.
-The main class Sketch inherit from CanvasBase. For the parts you need to implement, they all marked TODO.
+The main class Sketch inherit from CanvasBase. For the parts you need to implement, they all marked.
 First version Created on 09/28/2018
 
 :author: micou(Zezhou Sun)
@@ -9,6 +9,7 @@ First version Created on 09/28/2018
 """
 
 import os
+import typing
 
 import wx
 import math
@@ -28,6 +29,15 @@ except Exception:
     raise ImportError
 
 
+class AxisCalcData:
+    def __init__(self, init: int, final: int):
+        delta = final - init
+        self.delta = abs(delta)
+        self.trans = 1 if delta >= 0 else -1
+        self.init = init * self.trans
+        self.final = final * self.trans
+
+
 class Sketch(CanvasBase):
     """
     Please don't forget to override interrupt methods, otherwise NotImplementedError will throw out
@@ -45,12 +55,12 @@ class Sketch(CanvasBase):
     * doTexture(bool): Control flag of doing texture mapping
     * doSmooth(bool): Control flag of doing smooth
     * doAA(bool): Control flag of doing anti-aliasing
-    * doAAlevel(int): anti-alising super sampling level
+    * doAAlevel(int): anti-aliasing super sampling level
         
     Method Instruction:
 
     * Interrupt_MouseL(R): Used to deal with mouse click interruption. Canvas will be refreshed with updated buff
-    * Interrupt_Keyboard: Used to deal with key board press interruption. Use this to add new keys or new methods
+    * Interrupt_Keyboard: Used to deal with keyboard press interruption. Use this to add new keys or new methods
     * drawPoint: method to draw a point
     * drawLine: method to draw a line
     * drawTriangle: method to draw a triangle with filling and smoothing
@@ -104,7 +114,7 @@ class Sketch(CanvasBase):
                                self.testCaseTriTexture01]  # method at here must accept one argument, n_steps
         # Try to read texture file
         if os.path.isfile(self.texture_file_path):
-            # Read image and make it to an ndarray
+            # Read image and make it to a ndarray
             texture_image = Image.open(self.texture_file_path)
             texture_array = np.array(texture_image).astype(np.uint8)
             # Because imported image is upside down, reverse it
@@ -118,7 +128,7 @@ class Sketch(CanvasBase):
         else:
             raise ImportError("Cannot import texture file")
 
-    def __addPoint2Pointlist(self, pointlist, x, y):
+    def __addPoint2Pointlist(self, pointlist: typing.List[Point], x: int, y: int):
         if self.randomColor:
             p = Point((x, y), ColorType(random.random(), random.random(), random.random()))
         else:
@@ -126,7 +136,7 @@ class Sketch(CanvasBase):
         pointlist.append(p)
 
     # Deal with Mouse Left Button Pressed Interruption
-    def Interrupt_MouseL(self, x, y):
+    def Interrupt_MouseL(self, x: int, y: int):
         self.__addPoint2Pointlist(self.points_l, x, y)
         # Draw a point when one point provided or a line when two ends provided
         if len(self.points_l) % 2 == 1:
@@ -137,10 +147,12 @@ class Sketch(CanvasBase):
             if self.debug > 0:
                 print("draw a line from ", self.points_l[-1], " -> ", self.points_l[-2])
             self.drawPoint(self.buff, self.points_l[-1])
+            self.drawLine(self.buff, self.points_l[-1], self.points_l[-2],
+                          self.doSmooth, self.doAA, self.doAAlevel)
             self.points_l.clear()
 
     # Deal with Mouse Right Button Pressed Interruption
-    def Interrupt_MouseR(self, x, y):
+    def Interrupt_MouseR(self, x: int, y: int):
         self.__addPoint2Pointlist(self.points_r, x, y)
         if len(self.points_r) % 3 == 1:
             if self.debug > 0:
@@ -149,14 +161,17 @@ class Sketch(CanvasBase):
         elif len(self.points_r) % 3 == 2:
             if self.debug > 0:
                 print("draw a line from ", self.points_r[-1], " -> ", self.points_r[-2])
-            self.drawPoint(self.buff, self.points_r[-1])
+            self.drawLine(self.buff, self.points_r[-1], self.points_r[-2],
+                          self.doSmooth, self.doAA, self.doAAlevel)
         elif len(self.points_r) % 3 == 0 and len(self.points_r) > 0:
             if self.debug > 0:
                 print("draw a triangle {} -> {} -> {}".format(self.points_r[-3], self.points_r[-2], self.points_r[-1]))
             self.drawPoint(self.buff, self.points_r[-1])
+            self.drawTriangle(self.buff, self.points_r[-3], self.points_r[-2], self.points_r[-1],
+                              self.doSmooth, self.doAA, self.doAAlevel, self.doTexture)
             self.points_r.clear()
 
-    def Interrupt_Keyboard(self, keycode):
+    def Interrupt_Keyboard(self, keycode: int):
         """
         keycode Reference: https://docs.wxpython.org/wx.KeyCode.enumeration.html#wx-keycode
 
@@ -220,13 +235,13 @@ class Sketch(CanvasBase):
         """
         if self.debug > 1:
             if x != min(max(0, int(x)), texture.width - 1):
-                print("Warning: Texture Query x coordinate outbound")
+                print(f"Warning: Texture Query x: {x} coordinate outbound")
             if y != min(max(0, int(y)), texture.height - 1):
-                print("Warning: Texture Query y coordinate outbound")
+                print(f"Warning: Texture Query y: {y} coordinate outbound")
         return texture.getPointFromPointArray(x, y)
 
     @staticmethod
-    def drawPoint(buff, point):
+    def drawPoint(buff: Buff, point: Point, alpha=1.0):
         """
         Draw a point on buff
 
@@ -234,16 +249,33 @@ class Sketch(CanvasBase):
         :type buff: Buff
         :param point: A point to draw on buff
         :type point: Point
+        :param alpha: Control the opaqueness of the color
+        :type alpha: float from 0.0 to 1.0
         :rtype: None
         """
         x, y = point.coords
-        c = point.color
-        # because we have already specified buff.buff has data type uint8, type conversion will be done in numpy
-        buff.buff[x, y, 0] = c.r * 255
-        buff.buff[x, y, 1] = c.g * 255
-        buff.buff[x, y, 2] = c.b * 255
+        color = point.color
 
-    def drawLine(self, buff, p1, p2, doSmooth=True, doAA=False, doAAlevel=4):
+        if alpha <= 0.0:
+            return
+        elif alpha < 1.0:
+            orig_c = buff.getPoint(x, y).color
+            color = Sketch.interpolate_color(orig_c, color, alpha)
+
+        # because we have already specified buff.buff has data type uint8, type conversion will be done in numpy
+        buff.buff[x, y, 0] = color.r * 255
+        buff.buff[x, y, 1] = color.g * 255
+        buff.buff[x, y, 2] = color.b * 255
+
+    def a(self):
+        self.buff.getPoint()
+
+    @staticmethod
+    def __check_AAlevel(AAlevel: int):
+        if type(AAlevel) != int or AAlevel <= 0:
+            raise ValueError("AAlevel must be an integer >= 1.")
+
+    def drawLine(self, buff: Buff, p1: Point, p2: Point, doSmooth=True, doAA=False, doAAlevel=4):
         """
         Draw a line between p1 and p2 on buff
 
@@ -261,13 +293,31 @@ class Sketch(CanvasBase):
         :type doAAlevel: int
         :rtype: None
         """
-        ##### TODO 1: Use Bresenham algorithm to draw a line between p1 and p2 on buff.
-        # Requirements:
-        #   1. Only integer is allowed in interpolate point coordinates between p1 and p2
-        #   2. Float number is allowed in interpolate point color
+
+        if not doAA:
+            def drawLineCallback(x_point, y_point, t, eof: bool):
+                if not eof:
+                    self.drawPoint(buff, Point((x_point, y_point),
+                                               self.interpolate_color(p1.color, p2.color, t) if doSmooth else p1.color))
+
+            self.bresenham_iterator(p1.coords[0], p1.coords[1], p2.coords[0], p2.coords[1], drawLineCallback)
+        else:
+            # Here we do not use the values computed by the Bresenham function
+            # because we need to calculate the ratio between lower and upper here,
+            # And extrapolating the ratio by p_k here requires more floating computation.
+            # So here we use the original function values directly.
+            def drawAACallback(x1, y1, a1, x2, y2, a2, t, eof: bool):
+                if not eof:
+                    cur_color = self.interpolate_color(p1.color, p2.color, t) if doSmooth else p1.color
+                    self.drawPoint(buff, Point((x1, y1), cur_color), a1)
+                    self.drawPoint(buff, Point((x2, y2), cur_color), a2)
+            self.antialias_iterator(p1.coords[0], p1.coords[1], p2.coords[0], p2.coords[1], drawAACallback)
+
+        # end code of drawing
         return
 
-    def drawTriangle(self, buff, p1, p2, p3, doSmooth=True, doAA=False, doAAlevel=4, doTexture=False):
+    def drawTriangle(self, buff: Buff, p1: Point, p2: Point, p3: Point,
+                     doSmooth=True, doAA=False, doAAlevel=4, doTexture=False):
         """
         draw Triangle to buff. apply smooth color filling if doSmooth set to true, otherwise fill with first point color
         if doAA is true, apply anti-aliasing to triangle based on doAAlevel given.
@@ -290,17 +340,313 @@ class Sketch(CanvasBase):
         :type doTexture: bool
         :rtype: None
         """
-        ##### TODO 2: Write a triangle rendering function, which support smooth bilinear interpolation of the vertex color
-        ##### TODO 3(For CS680 Students): Implement texture-mapped fill of triangle. Texture is stored in self.texture
-        # Requirements:
-        #   1. For flat shading of the triangle, use the first vertex color.
-        #   2. Polygon scan fill algorithm and the use of barycentric coordinate are not allowed in this function
-        #   3. You should be able to support both flat shading and smooth shading, which is controlled by doSmooth
-        #   4. For texture-mapped fill of triangles, it should be controlled by doTexture flag.
+
+        # Sort the three points by the y-value from smallest to largest
+        points = [p1, p2, p3]
+        points.sort(key=lambda p: p.coords[1])
+        # Draw the triangle as two parts, top and bottom.
+        first_point = last_point = None
+
+        # If the y-value of the 1st point and the 2nd point are not the same
+        if points[0].coords[1] < points[1].coords[1]:
+            first_point = points[0]
+            # If the y-value of the 2nd point and the 3rd point are not the same
+            if points[1].coords[1] < points[2].coords[1]:
+                last_point = points[2]
+                # Select the point as the middle point
+                middle_point_1 = points[1]
+                # Another point needs to be interpolated,
+                # calculating the x-coordinate and the value of rgb
+                new_y = middle_point_1.coords[1]
+                new_t = Sketch.ratio(first_point.coords[1], middle_point_1.coords[1], last_point.coords[1])
+                new_x = Sketch.interpolate(first_point.coords[0], last_point.coords[0], new_t)
+                new_color = self.interpolate_color(first_point.color, last_point.color, new_t)
+                middle_point_2 = Point((new_x, new_y), new_color)
+            else:
+                # If y-value of the second point and the third point are same
+                middle_point_1 = points[1]
+                middle_point_2 = points[2]
+
+            # Middle two points should be sorted from smallest to largest
+            if middle_point_1.coords[0] > middle_point_2.coords[0]:
+                middle_point_1, middle_point_2 = middle_point_2, middle_point_1
+        else:
+            middle_point_1 = points[0]
+            middle_point_2 = points[1]
+            # If the second point and the third point has different y-value
+            if points[1].coords[1] < points[2].coords[1]:
+                last_point = points[2]
+            else:
+                # Show that the three points are on the same horizontal line and
+                # therefore the triangle is degenerate into a horizontal straight line.
+                # Sort the three points by x coordinate from smallest to largest
+                points.sort(key=lambda p: p.coords[0])
+                middle_point_1 = points[0]
+                middle_point_2 = points[2]
+
+        if self.debug:
+            print("Up and bottom parts:")
+            print(f"first_point: {first_point.coords if first_point else None}")
+            print(f"middle_points: {middle_point_1.coords}, {middle_point_2.coords}")
+            print(f"last_point: {last_point.coords if last_point else None}")
+            print()
+
+        # last_y is used to traverse y in Bresenham using
+        last_y = None
+        last_x_begin = last_x_end = 0
+        p1_y2x = {}
+        p2_y2x = {}
+
+        #    x
+        #   x-xx
+        #  x----xx
+        # x-------xx
+        #
+        # Here x is the outer boundary of the triangle.
+        # --- is the inside.
+
+        def addEdge(d: dict, y: int, x1: int, x2: int):
+            """
+            Utility to add edge data.
+            The edge here refers to the outer contour of the triangle.
+            It is drawn from the bottom to the top and used to set the boundary data on both sides.
+            """
+            if x1 > x2:
+                x1, x2 = x2, x1
+            if y not in d:
+                # If the y value has not been added yet, set a new one
+                d[y] = (x1, x2)
+            else:
+                # Merge with the old boundary if it already exists
+                d[y] = (min(d[y][0], x1), max(d[y][1], x2))
+        def find_point_edge(x: int, y: int, eof: bool,
+                            dict_to_store: typing.Dict[int, typing.Tuple[int, int]]):
+            """
+            Callback function used to find the boundary.
+            It detects the y-value of the point returned by Bresenham each time and
+            updates the range of x if y has not changed, otherwise it creates a new boundary.
+            """
+            nonlocal last_y, last_x_begin, last_x_end
+            if last_y is None:
+                last_y = y
+                last_x_begin = last_x_end = x
+            elif last_y != y:
+                addEdge(dict_to_store, last_y, last_x_begin, last_x_end)
+                last_y = y
+                last_x_begin = last_x_end = x
+            else:
+                last_x_end = x
+            if eof:
+                addEdge(dict_to_store, last_y, last_x_begin, last_x_end)
+
+        if first_point is not None:
+            self.bresenham_iterator(first_point.coords[0], first_point.coords[1],
+                                    middle_point_1.coords[0], middle_point_1.coords[1],
+                                    lambda x, y, t, eof:  find_point_edge(x, y, eof, p1_y2x))
+            self.bresenham_iterator(first_point.coords[0], first_point.coords[1],
+                                    middle_point_2.coords[0], middle_point_2.coords[1],
+                                    lambda x, y, t, eof:  find_point_edge(x, y, eof, p2_y2x))
+        if last_point is not None:
+            self.bresenham_iterator(middle_point_1.coords[0], middle_point_1.coords[1],
+                                    last_point.coords[0], last_point.coords[1],
+                                    lambda x, y, t, eof:  find_point_edge(x, y, eof, p1_y2x))
+            self.bresenham_iterator(middle_point_2.coords[0], middle_point_2.coords[1],
+                                    last_point.coords[0], last_point.coords[1],
+                                    lambda x, y, t, eof:  find_point_edge(x, y, eof, p2_y2x))
+
+        for y in range(points[0].coords[1], points[2].coords[1] + 1):
+            x1, x2 = p1_y2x[y]
+            x3, x4 = p2_y2x[y]
+
+            color, color1, color2 = None, None, None
+            texture_ty = 0
+            if not doTexture and not doSmooth:
+                color = p1.color
+            else:
+                if doTexture:
+                    texture_ty = Sketch.ratio(first_point.coords[1], y, last_point.coords[1])
+                else:
+                    # Calculate the color of the point at the beginning and end of the line
+                    if y <= middle_point_1.coords[1]:
+                        t = Sketch.ratio(first_point.coords[1], y, middle_point_1.coords[1])
+                        color1 = self.interpolate_color(first_point.color, middle_point_1.color, t)
+                        color2 = self.interpolate_color(first_point.color, middle_point_2.color, t)
+                    else:
+                        t = Sketch.ratio(middle_point_1.coords[1], y, last_point.coords[1])
+                        color1 = self.interpolate_color(middle_point_1.color, last_point.color, t)
+                        color2 = self.interpolate_color(middle_point_2.color, last_point.color, t)
+
+            # I'm going to let it draw half of the outer edges,
+            # in non-anti-aliased mode.
+            aa_left = math.floor(Sketch.interpolate(x1, x2, 0.5))
+            aa_right = math.ceil(Sketch.interpolate(x3, x4, 0.5))
+
+            for x in range(x1, x4 + 1):
+
+                if doTexture or doSmooth:
+                    tx = Sketch.ratio(x1, x, x4)
+                    if not doTexture:
+                        color = self.interpolate_color(color1, color2, tx)
+                    else:
+                        map_x = tx * (self.texture.width - 1)
+                        map_y = texture_ty * (self.texture.height - 1)
+                        color = self.textureAutoMapping(map_x, map_y)
+                        
+                if aa_left < x < aa_right:
+                    self.drawPoint(buff, Point((x, y), color))
+                elif not doAA:
+                    # boundary part
+                    # It must be not doAA to draw,
+                    # otherwise the boundary need to call the anti-aliasing algorithm to draw.
+                    self.drawPoint(buff, Point((x, y), color))
+
+        if doAA:
+            # If anti-aliasing is required, we also need to fill the edges
+            def aaCallback(x1, y1, a1, x2, y2, a2, time: float, eof: bool, cl1: ColorType, cl2: ColorType):
+                if not doSmooth and not doTexture:
+                    # for plain color
+                    clr = p1.color
+                elif not doTexture:
+                    clr = self.interpolate_color(cl1, cl2, time)
+                    # for gradient color
+                else:
+                    # for using maps
+                    nonlocal p1_y2x, p2_y2x
+                    ty1 = Sketch.ratio(first_point.coords[1], y1, last_point.coords[1])
+                    x_most_left = p1_y2x[y1][0]
+                    x_most_right = p2_y2x[y1][1]
+                    tx1 = Sketch.ratio(x_most_left, x1, x_most_right)
+                    map_x = tx1 * (self.texture.width - 1)
+                    map_y = ty1 * (self.texture.height - 1)
+                    clr = self.textureAutoMapping(map_x, map_y)
+                self.drawPoint(buff, Point((x1, y1), clr), a1)
+                self.drawPoint(buff, Point((x2, y2), clr), a2)
+
+            Sketch.antialias_iterator(points[0].coords[0], points[0].coords[1], points[1].coords[0], points[1].coords[1],
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, points[0].color, points[1].color))
+            Sketch.antialias_iterator(points[0].coords[0], points[0].coords[1], points[2].coords[0], points[2].coords[1],
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, points[0].color, points[2].color))
+            Sketch.antialias_iterator(points[1].coords[0], points[1].coords[1], points[2].coords[0], points[2].coords[1],
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, points[1].color, points[2].color))
         return
 
-    # test for lines lines in all directions
-    def testCaseLine01(self, n_steps):
+    def textureAutoMapping(self, map_x, map_y) -> ColorType:
+        # do bilinear interpolation here
+        if int(map_x) == map_x and int(map_y) == map_y:
+            color = self.queryTextureBuffPoint(self.texture, int(map_x), int(map_y)).color
+        elif int(map_x) == map_x and int(map_y) != map_y:
+            color_a = self.queryTextureBuffPoint(self.texture, int(map_x), math.floor(map_y)).color
+            color_b = self.queryTextureBuffPoint(self.texture, int(map_x), math.ceil(map_y)).color
+            color = self.interpolate_color(color_a, color_b, map_y % 1)
+        elif int(map_x) != map_x and int(map_y) == map_y:
+            color_a = self.queryTextureBuffPoint(self.texture, math.floor(map_x), int(map_y)).color
+            color_b = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), int(map_y)).color
+            color = self.interpolate_color(color_a, color_b, map_x % 1)
+        else:
+            # Get the left color first
+            color_a = self.queryTextureBuffPoint(self.texture, math.floor(map_x), math.floor(map_y)).color
+            color_b = self.queryTextureBuffPoint(self.texture, math.floor(map_x), math.ceil(map_y)).color
+            color_left = self.interpolate_color(color_a, color_b, map_y % 1)
+            # Get the right color again
+            color_a = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), math.floor(map_y)).color
+            color_b = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), math.ceil(map_y)).color
+            color_right = self.interpolate_color(color_a, color_b, map_y % 1)
+            # Final: interpolation
+            color = self.interpolate_color(color_left, color_right, map_x % 1)
+        return color
+
+    @staticmethod
+    def bresenham_iterator(x1, y1, x2, y2, callback: typing.Callable[[int, int, float, bool], None]):
+        x1 = round(x1)
+        x2 = round(x2)
+        y1 = round(y1)
+        y2 = round(y2)
+        x_data = AxisCalcData(x1, x2)
+        y_data = AxisCalcData(y1, y2)
+        x_step_mode = False
+        if abs(y_data.delta) <= abs(x_data.delta):
+            x_step_mode = True
+        else:
+            x_data, y_data = y_data, x_data
+        p = 2 * y_data.delta - x_data.delta
+
+        cur_x = cur_y = 0
+        while True:
+            if x_data.delta > 0:
+                t = cur_x / x_data.delta
+            else:
+                t = 1
+            draw_x = (cur_x + x_data.init) * x_data.trans
+            draw_y = (cur_y + y_data.init) * y_data.trans
+            if x_step_mode:
+                callback(draw_x, draw_y, t, False)
+            else:
+                callback(draw_y, draw_x, t, False)
+            cur_x += 1
+            if cur_x >= (x_data.delta + 1):
+                break
+            y_step = 1 if p > 0 else 0
+            cur_y += y_step
+            p = p + 2 * y_data.delta - 2 * x_data.delta * y_step
+        callback(0, 0, 0, True)
+
+    @staticmethod
+    def antialias_iterator(x1, y1, x2, y2,
+                           callback: typing.Callable[[int, int, float,
+                                                      int, int, float,
+                                                      float, bool], None]):
+        x_data = AxisCalcData(x1, x2)
+        y_data = AxisCalcData(y1, y2)
+        x_step_mode = False
+        if abs(y_data.delta) <= abs(x_data.delta):
+            x_step_mode = True
+        else:
+            x_data, y_data = y_data, x_data
+
+        for cur_x in range(0, x_data.delta + 1):
+            if x_data.delta > 0:
+                t = cur_x / x_data.delta
+            else:
+                t = 1
+            value_y = cur_x * y_data.delta / x_data.delta
+            floor_y = int(value_y)
+            alpha_k_1 = value_y - floor_y
+            alpha_k = 1 - alpha_k_1
+
+            draw_x = (cur_x + x_data.init) * x_data.trans
+            draw_y = (floor_y + y_data.init) * y_data.trans
+            draw_y_1 = (floor_y + 1 + y_data.init) * y_data.trans
+            if x_step_mode:
+                callback(draw_x, draw_y, alpha_k, draw_x, draw_y_1, alpha_k_1, t, False)
+            else:
+                callback(draw_y, draw_x, alpha_k, draw_y_1, draw_x, alpha_k_1, t, False)
+        callback(0, 0, 0, 0, 0, 0, 0, True)
+
+    @staticmethod
+    def interpolate(start: float, end: float, t: float):
+        return start * (1 - t) + end * t
+
+    @staticmethod
+    def interpolate_color(color1: ColorType,
+                          color2: ColorType,
+                          t: float):
+        return ColorType(
+            Sketch.interpolate(color1.r, color2.r, t),
+            Sketch.interpolate(color1.g, color2.g, t),
+            Sketch.interpolate(color1.b, color2.b, t),
+        )
+
+    @staticmethod
+    def ratio(start: float, value: float, end: float):
+        if end == start or value < start:
+            return 0
+        elif value > end:
+            return 1
+        else:
+            return (value - start) / (end - start)
+
+    # test for lines in all directions
+    def testCaseLine01(self, n_steps: int):
         center_x = int(self.buff.width / 2)
         center_y = int(self.buff.height / 2)
         radius = int(min(self.buff.width, self.buff.height) * 0.45)
@@ -312,11 +658,11 @@ class Sketch(CanvasBase):
                        ColorType(0, 0, (1 - step / n_steps)))
             v2 = Point([center_x - int(math.sin(theta) * radius), center_y - int(math.cos(theta) * radius)],
                        ColorType(0, (1 - step / n_steps), 0))
-            self.drawLine(self.buff, v2, v0, doSmooth=True)
-            self.drawLine(self.buff, v0, v1, doSmooth=True)
+            self.drawLine(self.buff, v2, v0, doSmooth=True, doAA=self.doAA)
+            self.drawLine(self.buff, v0, v1, doSmooth=True, doAA=self.doAA)
 
     # test for lines: drawing circle and petal 
-    def testCaseLine02(self, n_steps):
+    def testCaseLine02(self, n_steps: int):
         n_steps = 2 * n_steps
         d_theta = 2 * math.pi / n_steps
         d_petal = 12 * math.pi / n_steps
@@ -349,7 +695,7 @@ class Sketch(CanvasBase):
             self.drawLine(self.buff, v0, v1, doSmooth=True, doAA=self.doAA, doAAlevel=self.doAAlevel)
 
     # test for smooth filling triangle
-    def testCaseTri01(self, n_steps):
+    def testCaseTri01(self, n_steps: int):
         n_steps = int(n_steps / 2)
         delta = 2 * math.pi / n_steps
         radius = int(min(self.buff.width, self.buff.height) * 0.45)
@@ -370,7 +716,7 @@ class Sketch(CanvasBase):
                                  (127. + 127. * math.sin(theta + delta + 4 * math.pi / 3)) / 255))
             self.drawTriangle(self.buff, v1, v0, v2, False, self.doAA, self.doAAlevel)
 
-    def testCaseTri02(self, n_steps):
+    def testCaseTri02(self, n_steps: int):
         # Test case for no smooth color filling triangle
         n_steps = int(n_steps / 2)
         delta = 2 * math.pi / n_steps
@@ -392,7 +738,7 @@ class Sketch(CanvasBase):
                                  (127. + 127. * math.sin(theta + delta + 4 * math.pi / 3)) / 255))
             self.drawTriangle(self.buff, v0, v1, v2, True, self.doAA, self.doAAlevel)
 
-    def testCaseTriTexture01(self, n_steps):
+    def testCaseTriTexture01(self, n_steps: int):
         # Test case for no smooth color filling triangle
         n_steps = int(n_steps / 2)
         delta = 2 * math.pi / n_steps
@@ -426,7 +772,8 @@ if __name__ == "__main__":
         # Set FULL_REPAINT_ON_RESIZE will repaint everything when scaling the frame
         # here is the style setting for it: wx.DEFAULT_FRAME_STYLE | wx.FULL_REPAINT_ON_RESIZE
         # wx.DEFAULT_FRAME_STYLE ^ wx.RESIZE_BORDER will disable canvas resize.
-        frame = wx.Frame(None, size=(500, 500), title="Test", style=wx.DEFAULT_FRAME_STYLE & ~(wx.RESIZE_BORDER | wx.MAXIMIZE_BOX))
+        frame = wx.Frame(None, size=(500, 500), title="Test",
+                         style=wx.DEFAULT_FRAME_STYLE & ~(wx.RESIZE_BORDER | wx.MAXIMIZE_BOX))
 
         canvas = Sketch(frame)
         canvas.debug = 0
