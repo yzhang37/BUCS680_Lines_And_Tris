@@ -807,5 +807,5 @@ if __name__ == "__main__":
         stats.print_stats()
 
 
-    # main()
-    codingDebug()
+    main()
+    # codingDebug()
