@@ -377,6 +377,8 @@ class Sketch(CanvasBase):
             middle_point_2 = pt_sorted_y[1]
             # If the second point and the third point has different y-value
             if pt_sorted_y[1].coords[1] < pt_sorted_y[2].coords[1]:
+                if middle_point_1.coords[0] > middle_point_2.coords[0]:
+                    middle_point_1, middle_point_2 = middle_point_2, middle_point_1
                 last_point = pt_sorted_y[2]
             else:
                 # Show that the three points are on the same horizontal line and
