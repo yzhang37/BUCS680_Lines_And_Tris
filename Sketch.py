@@ -161,7 +161,8 @@ class Sketch(CanvasBase):
         elif len(self.points_r) % 3 == 2:
             if self.debug > 0:
                 print("draw a line from ", self.points_r[-1], " -> ", self.points_r[-2])
-            self.drawPoint(self.buff, self.points_r[-1])
+            self.drawLine(self.buff, self.points_r[-1], self.points_r[-2],
+                          self.doSmooth, self.doAA, self.doAAlevel)
         elif len(self.points_r) % 3 == 0 and len(self.points_r) > 0:
             if self.debug > 0:
                 print("draw a triangle {} -> {} -> {}".format(self.points_r[-3], self.points_r[-2], self.points_r[-1]))
