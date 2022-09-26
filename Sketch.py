@@ -357,8 +357,7 @@ class Sketch(CanvasBase):
                 # Another point needs to be interpolated,
                 # calculating the x-coordinate and the value of rgb
                 new_y = middle_point_1.coords[1]
-                new_t = (middle_point_1.coords[1] -
-                         first_point.coords[1]) / (last_point.coords[1] - first_point.coords[1])
+                new_t = Sketch.ratio(first_point.coords[1], middle_point_1.coords[1], last_point.coords[1])
                 new_x = Sketch.interpolate(first_point.coords[0], last_point.coords[0], new_t)
                 new_color = self.interpolate_color(first_point.color, last_point.color, new_t)
                 middle_point_2 = Point((new_x, new_y), new_color)
@@ -464,18 +463,15 @@ class Sketch(CanvasBase):
                 color = p1.color
             else:
                 if doTexture:
-                    texture_ty = (y - first_point.coords[1]) / (last_point.coords[1] - first_point.coords[1]) \
-                        if (last_point.coords[1] - first_point.coords[1]) > 0 else 0
+                    texture_ty = Sketch.ratio(first_point.coords[1], y, last_point.coords[1])
                 else:
                     # Calculate the color of the point at the beginning and end of the line
                     if y <= middle_point_1.coords[1]:
-                        t = (y - first_point.coords[1]) / (middle_point_1.coords[1] - first_point.coords[1]) \
-                            if (middle_point_1.coords[1] - first_point.coords[1]) > 0 else 0
+                        t = Sketch.ratio(first_point.coords[1], y, middle_point_1.coords[1])
                         color1 = self.interpolate_color(first_point.color, middle_point_1.color, t)
                         color2 = self.interpolate_color(first_point.color, middle_point_2.color, t)
                     else:
-                        t = (y - middle_point_1.coords[1]) / (last_point.coords[1] - middle_point_1.coords[1]) \
-                            if (last_point.coords[1] - middle_point_1.coords[1]) > 0 else 0
+                        t = Sketch.ratio(middle_point_1.coords[1], y, last_point.coords[1])
                         color1 = self.interpolate_color(middle_point_1.color, last_point.color, t)
                         color2 = self.interpolate_color(middle_point_2.color, last_point.color, t)
 
@@ -487,7 +483,7 @@ class Sketch(CanvasBase):
             for x in range(x1, x4 + 1):
 
                 if doTexture or doSmooth:
-                    tx = (x - x1) / (x4 - x1) if x4 > x1 else 0
+                    tx = Sketch.ratio(x1, x, x4)
                     if not doTexture:
                         color = self.interpolate_color(color1, color2, tx)
                     else:
@@ -505,13 +501,23 @@ class Sketch(CanvasBase):
 
         if doAA:
             # If anti-aliasing is required, we also need to fill the edges
-            def aaCallback(x1, y1, a1, x2, y2, a2, t: float, eof: bool, cl1: ColorType, cl2: ColorType):
+            def aaCallback(x1, y1, a1, x2, y2, a2, time: float, eof: bool, cl1: ColorType, cl2: ColorType):
                 if not doSmooth and not doTexture:
+                    # for plain color
                     clr = p1.color
                 elif not doTexture:
-                    clr = self.interpolate_color(cl1, cl2, t)
+                    clr = self.interpolate_color(cl1, cl2, time)
+                    # for gradient color
                 else:
-                    clr = p1.color
+                    # for using maps
+                    nonlocal p1_y2x, p2_y2x
+                    ty1 = Sketch.ratio(first_point.coords[1], y1, last_point.coords[1])
+                    x_most_left = p1_y2x[y1][0]
+                    x_most_right = p2_y2x[y1][1]
+                    tx1 = Sketch.ratio(x_most_left, x1, x_most_right)
+                    map_x = tx1 * (self.texture.width - 1)
+                    map_y = ty1 * (self.texture.height - 1)
+                    clr = self.textureAutoMapping(map_x, map_y)
                 self.drawPoint(buff, Point((x1, y1), clr), a1)
                 self.drawPoint(buff, Point((x2, y2), clr), a2)
 
@@ -628,6 +634,15 @@ class Sketch(CanvasBase):
             Sketch.interpolate(color1.g, color2.g, t),
             Sketch.interpolate(color1.b, color2.b, t),
         )
+
+    @staticmethod
+    def ratio(start: float, value: float, end: float):
+        if end == start or value < start:
+            return 0
+        elif value > end:
+            return 1
+        else:
+            return (value - start) / (end - start)
 
     # test for lines in all directions
     def testCaseLine01(self, n_steps: int):
@@ -791,5 +806,5 @@ if __name__ == "__main__":
         stats.print_stats()
 
 
-    main()
-    # codingDebug()
+    # main()
+    codingDebug()
