@@ -529,7 +529,7 @@ class Sketch(CanvasBase):
                 else:
                     # for using maps
                     nonlocal p1_y2x, p2_y2x
-                    ty1 = Sketch.ratio(first_point.coords[1], y1, last_point.coords[1])
+                    ty1 = Sketch.ratio(pt_sorted_y[0].coords[1], y1, pt_sorted_y[2].coords[1])
                     x_most_left = p1_y2x[y1][0]
                     x_most_right = p2_y2x[y1][1]
                     tx1 = Sketch.ratio(x_most_left, x1, x_most_right)
@@ -638,8 +638,8 @@ class Sketch(CanvasBase):
             if x_data.delta > 0:
                 t = cur_x / x_data.delta
             else:
-                t = 1
-            value_y = cur_x * y_data.delta / x_data.delta
+                t = 0
+            value_y = t * y_data.delta
             floor_y = int(value_y)
             alpha_k_1 = value_y - floor_y
             alpha_k = 1 - alpha_k_1
