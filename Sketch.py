@@ -539,12 +539,26 @@ class Sketch(CanvasBase):
                 self.drawPoint(buff, Point((x1, y1), clr), a1)
                 self.drawPoint(buff, Point((x2, y2), clr), a2)
 
-            Sketch.antialias_iterator(pt_sorted_y[0].coords[0], pt_sorted_y[0].coords[1], pt_sorted_y[1].coords[0], pt_sorted_y[1].coords[1],
-                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, pt_sorted_y[0].color, pt_sorted_y[1].color))
-            Sketch.antialias_iterator(pt_sorted_y[0].coords[0], pt_sorted_y[0].coords[1], pt_sorted_y[2].coords[0], pt_sorted_y[2].coords[1],
-                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, pt_sorted_y[0].color, pt_sorted_y[2].color))
-            Sketch.antialias_iterator(pt_sorted_y[1].coords[0], pt_sorted_y[1].coords[1], pt_sorted_y[2].coords[0], pt_sorted_y[2].coords[1],
-                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, pt_sorted_y[1].color, pt_sorted_y[2].color))
+            pt1_x = pt_sorted_y[0].coords[0]
+            pt1_y = pt_sorted_y[0].coords[1]
+            pt1_clr = pt_sorted_y[0].color
+            pt2_x = pt_sorted_y[1].coords[0]
+            pt2_y = pt_sorted_y[1].coords[1]
+            pt2_clr = pt_sorted_y[1].color
+            pt3_x = pt_sorted_y[2].coords[0]
+            pt3_y = pt_sorted_y[2].coords[1]
+            pt3_clr = pt_sorted_y[2].color
+
+            Sketch.antialias_iterator(pt1_x, pt1_y, pt2_x, pt2_y,
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, pt1_clr, pt2_clr))
+
+            # draw from point 1 to point 3
+            Sketch.antialias_iterator(pt1_x, pt1_y, pt3_x, pt3_y,
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, pt1_clr, pt3_clr))
+
+            # draw from point 2 to point 3
+            Sketch.antialias_iterator(pt2_x, pt2_y, pt3_x, pt3_y,
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, pt2_clr, pt3_clr))
         return
 
     def textureAutoMapping(self, map_x, map_y) -> ColorType:
