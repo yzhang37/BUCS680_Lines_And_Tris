@@ -339,9 +339,6 @@ class Sketch(CanvasBase):
         :type doTexture: bool
         :rtype: None
         """
-        ##### TODO 3(For CS680 Students): Implement texture-mapped fill of triangle. Texture is stored in self.texture
-        # Requirements:
-        #   4. TODO: For texture-mapped fill of triangles, it should be controlled by doTexture flag.
 
         # Sort the three points by the y-value from smallest to largest
         points = [p1, p2, p3]
@@ -360,9 +357,8 @@ class Sketch(CanvasBase):
                 # Another point needs to be interpolated,
                 # calculating the x-coordinate and the value of rgb
                 new_y = middle_point_1.coords[1]
-                new_t = (middle_point_1.coords[1] -
-                         first_point.coords[1]) / (last_point.coords[1] - first_point.coords[1])
-                new_x = first_point.coords[0] * (1 - new_t) + last_point.coords[0] * new_t
+                new_t = Sketch.ratio(first_point.coords[1], middle_point_1.coords[1], last_point.coords[1])
+                new_x = Sketch.interpolate(first_point.coords[0], last_point.coords[0], new_t)
                 new_color = self.interpolate_color(first_point.color, last_point.color, new_t)
                 middle_point_2 = Point((new_x, new_y), new_color)
             else:
@@ -467,59 +463,96 @@ class Sketch(CanvasBase):
                 color = p1.color
             else:
                 if doTexture:
-                    texture_ty = (y - first_point.coords[1]) / (last_point.coords[1] - first_point.coords[1]) \
-                        if (last_point.coords[1] - first_point.coords[1]) > 0 else 0
+                    texture_ty = Sketch.ratio(first_point.coords[1], y, last_point.coords[1])
                 else:
                     # Calculate the color of the point at the beginning and end of the line
                     if y <= middle_point_1.coords[1]:
-                        t = (y - first_point.coords[1]) / (middle_point_1.coords[1] - first_point.coords[1]) \
-                            if (middle_point_1.coords[1] - first_point.coords[1]) > 0 else 0
+                        t = Sketch.ratio(first_point.coords[1], y, middle_point_1.coords[1])
                         color1 = self.interpolate_color(first_point.color, middle_point_1.color, t)
                         color2 = self.interpolate_color(first_point.color, middle_point_2.color, t)
                     else:
-                        t = (y - middle_point_1.coords[1]) / (last_point.coords[1] - middle_point_1.coords[1]) \
-                            if (last_point.coords[1] - middle_point_1.coords[1]) > 0 else 0
+                        t = Sketch.ratio(middle_point_1.coords[1], y, last_point.coords[1])
                         color1 = self.interpolate_color(middle_point_1.color, last_point.color, t)
                         color2 = self.interpolate_color(middle_point_2.color, last_point.color, t)
 
+            # I'm going to let it draw half of the outer edges,
+            # in non-anti-aliased mode.
+            aa_left = math.floor(Sketch.interpolate(x1, x2, 0.5))
+            aa_right = math.ceil(Sketch.interpolate(x3, x4, 0.5))
+
             for x in range(x1, x4 + 1):
+
                 if doTexture or doSmooth:
-                    tx = (x - x1) / (x4 - x1) if x4 > x1 else 0
+                    tx = Sketch.ratio(x1, x, x4)
                     if not doTexture:
                         color = self.interpolate_color(color1, color2, tx)
                     else:
                         map_x = tx * (self.texture.width - 1)
                         map_y = texture_ty * (self.texture.height - 1)
-                        # do bilinear interpolation here
-                        if int(map_x) == map_x and int(map_y) == map_y:
-                            color = self.queryTextureBuffPoint(self.texture, int(map_x), int(map_y)).color
-                        elif int(map_x) == map_x and int(map_y) != map_y:
-                            color_a = self.queryTextureBuffPoint(self.texture, int(map_x), math.floor(map_y)).color
-                            color_b = self.queryTextureBuffPoint(self.texture, int(map_x), math.ceil(map_y)).color
-                            color = self.interpolate_color(color_a, color_b, map_y % 1)
-                        elif int(map_x) != map_x and int(map_y) == map_y:
-                            color_a = self.queryTextureBuffPoint(self.texture, math.floor(map_x), int(map_y)).color
-                            color_b = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), int(map_y)).color
-                            color = self.interpolate_color(color_a, color_b, map_x % 1)
-                        else:
-                            # Get the left color first
-                            color_a = self.queryTextureBuffPoint(self.texture, math.floor(map_x), math.floor(map_y)).color
-                            color_b = self.queryTextureBuffPoint(self.texture, math.floor(map_x), math.ceil(map_y)).color
-                            color_left = self.interpolate_color(color_a, color_b, map_y % 1)
-                            # Get the right color again
-                            color_a = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), math.floor(map_y)).color
-                            color_b = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), math.ceil(map_y)).color
-                            color_right = self.interpolate_color(color_a, color_b, map_y % 1)
-                            # Final: interpolation
-                            color = self.interpolate_color(color_left, color_right, map_x % 1)
-                if x2 < x < x3:
+                        color = self.textureAutoMapping(map_x, map_y)
+                        
+                if aa_left < x < aa_right:
                     self.drawPoint(buff, Point((x, y), color))
                 elif not doAA:
                     # boundary part
                     # It must be not doAA to draw,
                     # otherwise the boundary need to call the anti-aliasing algorithm to draw.
                     self.drawPoint(buff, Point((x, y), color))
+
+        if doAA:
+            # If anti-aliasing is required, we also need to fill the edges
+            def aaCallback(x1, y1, a1, x2, y2, a2, time: float, eof: bool, cl1: ColorType, cl2: ColorType):
+                if not doSmooth and not doTexture:
+                    # for plain color
+                    clr = p1.color
+                elif not doTexture:
+                    clr = self.interpolate_color(cl1, cl2, time)
+                    # for gradient color
+                else:
+                    # for using maps
+                    nonlocal p1_y2x, p2_y2x
+                    ty1 = Sketch.ratio(first_point.coords[1], y1, last_point.coords[1])
+                    x_most_left = p1_y2x[y1][0]
+                    x_most_right = p2_y2x[y1][1]
+                    tx1 = Sketch.ratio(x_most_left, x1, x_most_right)
+                    map_x = tx1 * (self.texture.width - 1)
+                    map_y = ty1 * (self.texture.height - 1)
+                    clr = self.textureAutoMapping(map_x, map_y)
+                self.drawPoint(buff, Point((x1, y1), clr), a1)
+                self.drawPoint(buff, Point((x2, y2), clr), a2)
+
+            Sketch.antialias_iterator(points[0].coords[0], points[0].coords[1], points[1].coords[0], points[1].coords[1],
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, points[0].color, points[1].color))
+            Sketch.antialias_iterator(points[0].coords[0], points[0].coords[1], points[2].coords[0], points[2].coords[1],
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, points[0].color, points[2].color))
+            Sketch.antialias_iterator(points[1].coords[0], points[1].coords[1], points[2].coords[0], points[2].coords[1],
+                lambda x1, y1, a1, x2, y2, a2, t, eof: aaCallback(x1, y1, a1, x2, y2, a2, t, eof, points[1].color, points[2].color))
         return
+
+    def textureAutoMapping(self, map_x, map_y) -> ColorType:
+        # do bilinear interpolation here
+        if int(map_x) == map_x and int(map_y) == map_y:
+            color = self.queryTextureBuffPoint(self.texture, int(map_x), int(map_y)).color
+        elif int(map_x) == map_x and int(map_y) != map_y:
+            color_a = self.queryTextureBuffPoint(self.texture, int(map_x), math.floor(map_y)).color
+            color_b = self.queryTextureBuffPoint(self.texture, int(map_x), math.ceil(map_y)).color
+            color = self.interpolate_color(color_a, color_b, map_y % 1)
+        elif int(map_x) != map_x and int(map_y) == map_y:
+            color_a = self.queryTextureBuffPoint(self.texture, math.floor(map_x), int(map_y)).color
+            color_b = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), int(map_y)).color
+            color = self.interpolate_color(color_a, color_b, map_x % 1)
+        else:
+            # Get the left color first
+            color_a = self.queryTextureBuffPoint(self.texture, math.floor(map_x), math.floor(map_y)).color
+            color_b = self.queryTextureBuffPoint(self.texture, math.floor(map_x), math.ceil(map_y)).color
+            color_left = self.interpolate_color(color_a, color_b, map_y % 1)
+            # Get the right color again
+            color_a = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), math.floor(map_y)).color
+            color_b = self.queryTextureBuffPoint(self.texture, math.ceil(map_x), math.ceil(map_y)).color
+            color_right = self.interpolate_color(color_a, color_b, map_y % 1)
+            # Final: interpolation
+            color = self.interpolate_color(color_left, color_right, map_x % 1)
+        return color
 
     @staticmethod
     def bresenham_iterator(x1, y1, x2, y2, callback: typing.Callable[[int, int, float, bool], None]):
@@ -589,16 +622,29 @@ class Sketch(CanvasBase):
         callback(0, 0, 0, 0, 0, 0, 0, True)
 
     @staticmethod
+    def interpolate(start: float, end: float, t: float):
+        return start * (1 - t) + end * t
+
+    @staticmethod
     def interpolate_color(color1: ColorType,
                           color2: ColorType,
                           t: float):
         return ColorType(
-            color1.r * (1 - t) + color2.r * t,
-            color1.g * (1 - t) + color2.g * t,
-            color1.b * (1 - t) + color2.b * t,
+            Sketch.interpolate(color1.r, color2.r, t),
+            Sketch.interpolate(color1.g, color2.g, t),
+            Sketch.interpolate(color1.b, color2.b, t),
         )
 
-    # test for lines lines in all directions
+    @staticmethod
+    def ratio(start: float, value: float, end: float):
+        if end == start or value < start:
+            return 0
+        elif value > end:
+            return 1
+        else:
+            return (value - start) / (end - start)
+
+    # test for lines in all directions
     def testCaseLine01(self, n_steps: int):
         center_x = int(self.buff.width / 2)
         center_y = int(self.buff.height / 2)
@@ -760,5 +806,5 @@ if __name__ == "__main__":
         stats.print_stats()
 
 
-    main()
-    # codingDebug()
+    # main()
+    codingDebug()
