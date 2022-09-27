@@ -707,14 +707,14 @@ class Sketch(CanvasBase):
             self.drawLine(self.buff,
                           Point((math.floor(0.5 + radius * math.sin(d_theta * i) + p * math.sin(d_petal * i)) + cx,
                                  math.floor(0.5 + radius * math.cos(d_theta * i) + p * math.cos(d_petal * i)) + cy),
-                                ColorType(1, (128 + math.sin(d_theta * i * 5) * 127 / 255),
-                                          (128 + math.cos(d_theta * i * 5) * 127 / 255))),
+                                ColorType(1, (128 + math.sin(d_theta * i * 5) * 127) / 255,
+                                          (128 + math.cos(d_theta * i * 5) * 127) / 255)),
                           Point((math.floor(
                               0.5 + radius * math.sin(d_theta * (i + 1)) + p * math.sin(d_petal * (i + 1))) + cx,
                                  math.floor(0.5 + radius * math.cos(d_theta * (i + 1)) + p * math.cos(
                                      d_petal * (i + 1))) + cy),
-                                ColorType(1, (128 + math.sin(d_theta * 5 * (i + 1)) * 127 / 255),
-                                          (128 + math.cos(d_theta * 5 * (i + 1)) * 127 / 255))),
+                                ColorType(1, (128 + math.sin(d_theta * 5 * (i + 1)) * 127) / 255,
+                                          (128 + math.cos(d_theta * 5 * (i + 1)) * 127) / 255)),
                           doSmooth=True, doAA=self.doAA, doAAlevel=self.doAAlevel)
 
         # Draw circle
