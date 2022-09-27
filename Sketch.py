@@ -477,7 +477,7 @@ class Sketch(CanvasBase):
                         # Here, if y is in the upper half of the triangle,
                         # we need to calculate the position of y relative to the height of the upper half
                         if first_point is not None:
-                            t = Sketch.ratio(first_point.coords[1], y, middle_point_1.coords[1])
+                            t = Sketch.ratio(first_point.coords[1], y + 1, middle_point_1.coords[1] + 1)
                             color1 = self.interpolate_color(first_point.color, middle_point_1.color, t)
                             color2 = self.interpolate_color(first_point.color, middle_point_2.color, t)
                         else:
@@ -487,7 +487,7 @@ class Sketch(CanvasBase):
                         # Here, if y is in the lower half of the triangle,
                         # we need to calculate the position of y relative to the height of the lower half
                         if last_point is not None:
-                            t = Sketch.ratio(middle_point_1.coords[1], y, last_point.coords[1])
+                            t = Sketch.ratio(middle_point_1.coords[1], y, last_point.coords[1] + 1)
                             color1 = self.interpolate_color(middle_point_1.color, last_point.color, t)
                             color2 = self.interpolate_color(middle_point_2.color, last_point.color, t)
                         else:
@@ -501,10 +501,11 @@ class Sketch(CanvasBase):
 
             for x in range(x1, x4 + 1):
                 if doTexture or doSmooth:
-                    tx = Sketch.ratio(x1, x, x4)
                     if not doTexture:
+                        tx = Sketch.ratio(x1, x, x4)
                         color = self.interpolate_color(color1, color2, tx)
                     else:
+                        tx = Sketch.ratio(pt_sorted_x[0].coords[0], x, pt_sorted_x[2].coords[0])
                         map_x = tx * (self.texture.width - 1)
                         map_y = texture_ty * (self.texture.height - 1)
                         color = self.textureAutoMapping(map_x, map_y)
@@ -528,11 +529,8 @@ class Sketch(CanvasBase):
                     # for gradient color
                 else:
                     # for using maps
-                    nonlocal p1_y2x, p2_y2x
-                    ty1 = Sketch.ratio(pt_sorted_y[0].coords[1], y1, pt_sorted_y[2].coords[1])
-                    x_most_left = p1_y2x[y1][0]
-                    x_most_right = p2_y2x[y1][1]
-                    tx1 = Sketch.ratio(x_most_left, x1, x_most_right)
+                    ty1 = Sketch.ratio(pt_sorted_y[0].coords[1], y1, pt_sorted_y[2].coords[1] + 1)
+                    tx1 = Sketch.ratio(pt_sorted_x[0].coords[0], x1, pt_sorted_x[2].coords[0])
                     map_x = tx1 * (self.texture.width - 1)
                     map_y = ty1 * (self.texture.height - 1)
                     clr = self.textureAutoMapping(map_x, map_y)
@@ -793,7 +791,7 @@ class Sketch(CanvasBase):
             triangleList.append([v0, v1, v2])
 
         for t in triangleList:
-            self.drawTriangle(self.buff, *t, doTexture=True)
+            self.drawTriangle(self.buff, *t, doTexture=True, doAA=self.doAA, doAAlevel=self.doAAlevel)
 
 
 if __name__ == "__main__":
